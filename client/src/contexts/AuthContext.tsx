@@ -56,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(err.message || "Login failed");
     }
     const data = await res.json();
+    sessionStorage.setItem("auth_token", data.token);
     setToken(data.token);
     setUser(data.user);
   }, []);

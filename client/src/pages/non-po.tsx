@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiPut } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePermissions } from "@/contexts/PermissionsContext";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ function formatAmount(v: number | null | undefined) {
 }
 
 function FormBuilder() {
+  const { can } = usePermissions();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [formName, setFormName] = useState("");
@@ -171,10 +173,12 @@ function FormBuilder() {
             </div>
           </div>
 
-          <Button className="w-full" onClick={handleSubmit} disabled={createForm.isPending} data-testid="button-create-form">
-            {createForm.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-            Create & Send Form
-          </Button>
+          {can("non_po", "canCreate") && (
+            <Button className="w-full" onClick={handleSubmit} disabled={createForm.isPending} data-testid="button-create-form">
+              {createForm.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+              Create & Send Form
+            </Button>
+          )}
         </CardContent>
       </Card>
 
@@ -204,6 +208,7 @@ function FormBuilder() {
 }
 
 function SubmissionsTab() {
+  const { can } = usePermissions();
   const { data, isLoading } = useQuery({
     queryKey: ["/api/non-po/submissions"],
     queryFn: () => apiGet<any[]>("/api/non-po/submissions"),
@@ -252,7 +257,7 @@ function SubmissionsTab() {
                     <Badge variant={s.status === "Approved" ? "default" : "secondary"} className="text-[10px]">{s.status}</Badge>
                   </TableCell>
                   <TableCell>
-                    {s.status !== "Approved" && (
+                    {s.status !== "Approved" && can("non_po", "canApprove") && (
                       <Button size="sm" onClick={() => approveMutation.mutate(s.id)} disabled={approveMutation.isPending} data-testid={`button-approve-${s.id}`}>
                         <CheckCircle className="h-3.5 w-3.5 mr-1" />
                         Approve
@@ -271,6 +276,7 @@ function SubmissionsTab() {
 
 export default function NonPoPage() {
   const { isFinanceAdmin } = useAuth();
+  const { can } = usePermissions();
 
   return (
     <div className="p-6 space-y-4">

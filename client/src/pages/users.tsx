@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiPut } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePermissions } from "@/contexts/PermissionsContext";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +31,7 @@ function roleBadgeVariant(role: string): "default" | "secondary" | "outline" {
 
 export default function UsersPage() {
   const { isFinanceAdmin } = useAuth();
+  const { can } = usePermissions();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -136,7 +138,7 @@ export default function UsersPage() {
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Search users..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 w-48" data-testid="input-search-users" />
           </div>
-          {isFinanceAdmin && (
+          {can("users", "canInvite") && (
             <Button onClick={openCreate} data-testid="button-create-user">
               <UserPlus className="mr-1.5 h-4 w-4" />
               Add User
@@ -165,7 +167,7 @@ export default function UsersPage() {
                   <TableHead>Roles</TableHead>
                   <TableHead>Cost Centers</TableHead>
                   <TableHead>Status</TableHead>
-                  {isFinanceAdmin && <TableHead>Actions</TableHead>}
+                  {can("users", "canEdit") && <TableHead>Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -204,7 +206,7 @@ export default function UsersPage() {
                         {user.status}
                       </Badge>
                     </TableCell>
-                    {isFinanceAdmin && (
+                    {can("users", "canEdit") && (
                       <TableCell>
                         <Button size="sm" variant="outline" onClick={() => openEdit(user)} data-testid={`button-edit-user-${user.id}`}>
                           <Pencil className="h-3.5 w-3.5" />

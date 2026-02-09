@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPut, apiPost } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePermissions } from "@/contexts/PermissionsContext";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,7 @@ import { Settings, Upload, Shield, Sliders, Save, Loader2, FileUp } from "lucide
 
 function ProcessingConfig() {
   const { isFinanceAdmin } = useAuth();
+  const { can } = usePermissions();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -71,7 +73,7 @@ function ProcessingConfig() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Processing Month</Label>
-            <Select value={processingMonth} onValueChange={setProcessingMonth} disabled={!isFinanceAdmin}>
+            <Select value={processingMonth} onValueChange={setProcessingMonth} disabled={!can("config", "canEdit")}>
               <SelectTrigger data-testid="select-processing-month"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {["Jan 2026", "Feb 2026", "Mar 2026", "Apr 2026", "May 2026", "Jun 2026",
@@ -83,19 +85,17 @@ function ProcessingConfig() {
           </div>
           <div className="space-y-2">
             <Label>Threshold Amount</Label>
-            <Input type="number" value={threshold} onChange={e => setThreshold(e.target.value)} disabled={!isFinanceAdmin} data-testid="input-threshold" />
+            <Input type="number" value={threshold} onChange={e => setThreshold(e.target.value)} disabled={!can("config", "canEdit")} data-testid="input-threshold" />
           </div>
           <div className="space-y-2">
             <Label>Default Credit GL</Label>
-            <Input value={creditGl} onChange={e => setCreditGl(e.target.value)} placeholder="e.g., 50010011" disabled={!isFinanceAdmin} data-testid="input-credit-gl" />
+            <Input value={creditGl} onChange={e => setCreditGl(e.target.value)} placeholder="e.g., 50010011" disabled={!can("config", "canEdit")} data-testid="input-credit-gl" />
           </div>
         </div>
-        {isFinanceAdmin && (
-          <Button onClick={handleSave} disabled={updateConfig.isPending} data-testid="button-save-config">
-            {updateConfig.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            Save Configuration
-          </Button>
-        )}
+        <Button onClick={handleSave} disabled={!can("config", "canEdit") || updateConfig.isPending} data-testid="button-save-config">
+          {updateConfig.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+          Save Configuration
+        </Button>
       </CardContent>
     </Card>
   );
@@ -239,6 +239,7 @@ function RolePermissionsConfig() {
       apiPut("/api/config/permissions", params),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/config/permissions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/permissions/me"] });
       toast({
         title: "Permission updated",
         description: `${variables.field.replace("can", "")} permission ${variables.value ? "enabled" : "disabled"} for ${variables.role}`,

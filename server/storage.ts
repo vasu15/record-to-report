@@ -470,6 +470,32 @@ export const storage = {
     return db.select().from(rolePermissions);
   },
 
+  async getEffectivePermissions(userId: number) {
+    const roles = await db.select().from(userRoles).where(eq(userRoles.userId, userId));
+    const roleNames = roles.map(r => r.role);
+    if (roleNames.length === 0) return {};
+
+    const perms = await db.select().from(rolePermissions)
+      .where(inArray(rolePermissions.role, roleNames));
+
+    const features = ["period_based", "activity_based", "non_po", "reports", "users", "config"];
+    const effective: Record<string, Record<string, boolean>> = {};
+
+    for (const feature of features) {
+      const featurePerms = perms.filter(p => p.permission === feature);
+      effective[feature] = {
+        canView: featurePerms.some(p => p.canView),
+        canCreate: featurePerms.some(p => p.canCreate),
+        canEdit: featurePerms.some(p => p.canEdit),
+        canDelete: featurePerms.some(p => p.canDelete),
+        canApprove: featurePerms.some(p => p.canApprove),
+        canDownload: featurePerms.some(p => p.canDownload),
+        canInvite: featurePerms.some(p => p.canInvite),
+      };
+    }
+    return effective;
+  },
+
   async updatePermission(role: string, permission: string, field: string, value: boolean) {
     const existing = await db.select().from(rolePermissions)
       .where(and(eq(rolePermissions.role, role), eq(rolePermissions.permission, permission)));

@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { PermissionsProvider, usePermissions } from "@/contexts/PermissionsContext";
 import { ThemeProvider } from "@/components/layout/ThemeProvider";
 import { AppLayout } from "@/components/layout/AppLayout";
 import LoginPage from "@/pages/login";
@@ -20,10 +21,14 @@ import ConfigurationPage from "@/pages/configuration";
 import NotFound from "@/pages/not-found";
 import { Loader2 } from "lucide-react";
 
-function ProtectedRoute({ component: Component, roles }: { component: React.ComponentType; roles?: string[] }) {
-  const { user, hasAnyRole } = useAuth();
+function ProtectedRoute({ component: Component, feature, requireFinance, requireBusiness }: { component: React.ComponentType; feature?: string; requireFinance?: boolean; requireBusiness?: boolean }) {
+  const { user, isFinance, isBusinessUser } = useAuth();
+  const { canView, isLoading } = usePermissions();
   if (!user) return <Redirect to="/" />;
-  if (roles && !hasAnyRole(roles)) return <Redirect to="/dashboard" />;
+  if (isLoading) return null;
+  if (requireFinance && !isFinance) return <Redirect to="/dashboard" />;
+  if (requireBusiness && !isBusinessUser) return <Redirect to="/dashboard" />;
+  if (feature && !canView(feature)) return <Redirect to="/dashboard" />;
   return (
     <AppLayout>
       <Component />
@@ -58,31 +63,31 @@ function AppRoutes() {
         <ProtectedRoute component={DashboardPage} />
       </Route>
       <Route path="/period-based">
-        <ProtectedRoute component={PeriodBasedPage} roles={["Finance Admin", "Finance Approver"]} />
+        <ProtectedRoute component={PeriodBasedPage} feature="period_based" requireFinance />
       </Route>
       <Route path="/activity-based">
-        <ProtectedRoute component={ActivityBasedPage} roles={["Finance Admin", "Finance Approver"]} />
+        <ProtectedRoute component={ActivityBasedPage} feature="activity_based" requireFinance />
       </Route>
       <Route path="/my-tasks">
-        <ProtectedRoute component={MyTasksPage} roles={["Business User"]} />
+        <ProtectedRoute component={MyTasksPage} feature="activity_based" requireBusiness />
       </Route>
       <Route path="/non-po">
-        <ProtectedRoute component={NonPoPage} roles={["Finance Admin", "Finance Approver"]} />
+        <ProtectedRoute component={NonPoPage} feature="non_po" requireFinance />
       </Route>
       <Route path="/my-forms">
-        <ProtectedRoute component={MyFormsPage} roles={["Business User"]} />
+        <ProtectedRoute component={MyFormsPage} feature="non_po" requireBusiness />
       </Route>
       <Route path="/approval-rules">
-        <ProtectedRoute component={ApprovalRulesPage} roles={["Finance Admin", "Finance Approver"]} />
+        <ProtectedRoute component={ApprovalRulesPage} feature="config" requireFinance />
       </Route>
       <Route path="/users">
-        <ProtectedRoute component={UsersPage} roles={["Finance Admin", "Finance Approver"]} />
+        <ProtectedRoute component={UsersPage} feature="users" requireFinance />
       </Route>
       <Route path="/reports">
-        <ProtectedRoute component={ReportsPage} roles={["Finance Admin", "Finance Approver"]} />
+        <ProtectedRoute component={ReportsPage} feature="reports" requireFinance />
       </Route>
       <Route path="/configuration">
-        <ProtectedRoute component={ConfigurationPage} roles={["Finance Admin", "Finance Approver"]} />
+        <ProtectedRoute component={ConfigurationPage} feature="config" requireFinance />
       </Route>
       <Route component={NotFound} />
     </Switch>
@@ -95,8 +100,10 @@ function App() {
       <ThemeProvider>
         <TooltipProvider>
           <AuthProvider>
-            <Toaster />
-            <AppRoutes />
+            <PermissionsProvider>
+              <Toaster />
+              <AppRoutes />
+            </PermissionsProvider>
           </AuthProvider>
         </TooltipProvider>
       </ThemeProvider>

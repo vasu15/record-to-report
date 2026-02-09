@@ -6,7 +6,7 @@ export function getAuthHeaders(): HeadersInit {
 export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const headers = { ...getAuthHeaders(), ...(options.headers || {}) };
   const res = await fetch(url, { ...options, headers });
-  if (res.status === 401) {
+  if (res.status === 401 && url.includes("/api/auth/")) {
     sessionStorage.removeItem("auth_token");
     window.location.href = "/";
   }

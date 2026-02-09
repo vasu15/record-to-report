@@ -1,4 +1,5 @@
 import { useAuth } from "@/contexts/AuthContext";
+import { usePermissions } from "@/contexts/PermissionsContext";
 import { useTheme } from "@/components/layout/ThemeProvider";
 import { useLocation, Link } from "wouter";
 import {
@@ -24,21 +25,23 @@ interface NavItem {
   title: string;
   url: string;
   icon: any;
-  roles: string[];
-  badge?: string;
+  feature?: string;
+  alwaysShow?: boolean;
+  businessUserOnly?: boolean;
+  financeOnly?: boolean;
 }
 
 const navItems: NavItem[] = [
-  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, roles: ["Finance Admin", "Finance Approver", "Business User"] },
-  { title: "Period-Based Accruals", url: "/period-based", icon: Clock, roles: ["Finance Admin", "Finance Approver"] },
-  { title: "Activity-Based Accruals", url: "/activity-based", icon: Activity, roles: ["Finance Admin", "Finance Approver"] },
-  { title: "My Tasks", url: "/my-tasks", icon: ClipboardList, roles: ["Business User"] },
-  { title: "Non-PO Accruals", url: "/non-po", icon: FileText, roles: ["Finance Admin", "Finance Approver"] },
-  { title: "My Forms", url: "/my-forms", icon: FileInput, roles: ["Business User"] },
-  { title: "Approval Rules", url: "/approval-rules", icon: Shield, roles: ["Finance Admin", "Finance Approver"] },
-  { title: "User Management", url: "/users", icon: Users, roles: ["Finance Admin", "Finance Approver"] },
-  { title: "Reports", url: "/reports", icon: BarChart3, roles: ["Finance Admin", "Finance Approver"] },
-  { title: "Configuration", url: "/configuration", icon: Settings, roles: ["Finance Admin", "Finance Approver"] },
+  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, alwaysShow: true },
+  { title: "Period-Based Accruals", url: "/period-based", icon: Clock, feature: "period_based", financeOnly: true },
+  { title: "Activity-Based Accruals", url: "/activity-based", icon: Activity, feature: "activity_based", financeOnly: true },
+  { title: "My Tasks", url: "/my-tasks", icon: ClipboardList, feature: "activity_based", businessUserOnly: true },
+  { title: "Non-PO Accruals", url: "/non-po", icon: FileText, feature: "non_po", financeOnly: true },
+  { title: "My Forms", url: "/my-forms", icon: FileInput, feature: "non_po", businessUserOnly: true },
+  { title: "Approval Rules", url: "/approval-rules", icon: Shield, feature: "config", financeOnly: true },
+  { title: "User Management", url: "/users", icon: Users, feature: "users", financeOnly: true },
+  { title: "Reports", url: "/reports", icon: BarChart3, feature: "reports", financeOnly: true },
+  { title: "Configuration", url: "/configuration", icon: Settings, feature: "config", financeOnly: true },
 ];
 
 function NotificationBell() {
@@ -64,10 +67,17 @@ function NotificationBell() {
 }
 
 function AppSidebar() {
-  const { user, hasAnyRole } = useAuth();
+  const { user, isBusinessUser, isFinance } = useAuth();
+  const { canView } = usePermissions();
   const [location] = useLocation();
 
-  const filteredNav = navItems.filter(item => hasAnyRole(item.roles));
+  const filteredNav = navItems.filter(item => {
+    if (item.alwaysShow) return true;
+    if (item.businessUserOnly && !isBusinessUser) return false;
+    if (item.financeOnly && !isFinance) return false;
+    if (item.feature && !canView(item.feature)) return false;
+    return true;
+  });
 
   return (
     <Sidebar>

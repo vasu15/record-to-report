@@ -10,6 +10,7 @@ import {
   PieChart, Pie, Cell, LineChart, Line
 } from "recharts";
 import { Download, FileSpreadsheet, AlertTriangle, TrendingUp, BarChart3 } from "lucide-react";
+import { usePermissions } from "@/contexts/PermissionsContext";
 
 const COLORS = [
   "hsl(217, 91%, 35%)", "hsl(173, 58%, 30%)", "hsl(43, 74%, 38%)",
@@ -179,6 +180,7 @@ function ExceptionsTab() {
 }
 
 export default function ReportsPage() {
+  const { can } = usePermissions();
   const handleExport = async () => {
     const token = sessionStorage.getItem("auth_token");
     const res = await fetch("/api/reports/export", {
@@ -202,10 +204,12 @@ export default function ReportsPage() {
           <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">Reports & Analytics</h1>
           <p className="text-sm text-muted-foreground mt-1">Comprehensive reporting and exception tracking</p>
         </div>
-        <Button onClick={handleExport} variant="outline" data-testid="button-export">
-          <Download className="mr-1.5 h-4 w-4" />
-          Export CSV
-        </Button>
+        {can("reports", "canDownload") && (
+          <Button onClick={handleExport} variant="outline" data-testid="button-export">
+            <Download className="mr-1.5 h-4 w-4" />
+            Export CSV
+          </Button>
+        )}
       </div>
 
       <Tabs defaultValue="analytics">

@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { DollarSign, Clock, Activity, FileText, CheckCircle, AlertTriangle, TrendingUp, Users } from "lucide-react";
+import { DollarSign, Clock, Activity, FileText, CheckCircle, AlertTriangle, TrendingUp, Users, ClipboardList } from "lucide-react";
 
 interface DashboardData {
   totalPeriodBased: number;

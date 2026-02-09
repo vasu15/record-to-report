@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiPut } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePermissions } from "@/contexts/PermissionsContext";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +40,7 @@ function statusBadge(status: string) {
 }
 
 function AssignmentTab() {
+  const { can } = usePermissions();
   const [search, setSearch] = useState("");
   const [assignOpen, setAssignOpen] = useState(false);
   const [selectedPo, setSelectedPo] = useState<any>(null);
@@ -122,15 +124,17 @@ function AssignmentTab() {
                         <TableCell className="text-xs">{line.assignedToName || "-"}</TableCell>
                         <TableCell>{statusBadge(line.assignmentStatus || "Not Assigned")}</TableCell>
                         <TableCell>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => { setSelectedPo(line); setAssignOpen(true); }}
-                            data-testid={`button-assign-${line.id}`}
-                          >
-                            <UserPlus className="h-3.5 w-3.5 mr-1" />
-                            Assign
-                          </Button>
+                          {can("activity_based", "canCreate") && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => { setSelectedPo(line); setAssignOpen(true); }}
+                              data-testid={`button-assign-${line.id}`}
+                            >
+                              <UserPlus className="h-3.5 w-3.5 mr-1" />
+                              Assign
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -182,6 +186,7 @@ function AssignmentTab() {
 }
 
 function ResponseTab() {
+  const { can } = usePermissions();
   const { data, isLoading } = useQuery({
     queryKey: ["/api/activity-based/responses"],
     queryFn: () => apiGet<any[]>("/api/activity-based/responses"),
@@ -239,7 +244,7 @@ function ResponseTab() {
                       <TableCell className="text-xs truncate max-w-[140px]">{r.comments || "-"}</TableCell>
                       <TableCell>{statusBadge(r.status)}</TableCell>
                       <TableCell>
-                        {r.status !== "Approved" && (
+                        {r.status !== "Approved" && can("activity_based", "canApprove") && (
                           <Button
                             size="sm"
                             onClick={() => approveMutation.mutate(r.assignmentId)}
@@ -265,6 +270,7 @@ function ResponseTab() {
 }
 
 export default function ActivityBasedPage() {
+  const { can } = usePermissions();
   return (
     <div className="p-6 space-y-4">
       <div>

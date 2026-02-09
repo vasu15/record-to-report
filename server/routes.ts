@@ -69,6 +69,15 @@ export async function registerRoutes(
     res.json(config);
   });
 
+  app.get("/api/permissions/me", authMiddleware, async (req, res) => {
+    try {
+      const effective = await storage.getEffectivePermissions(req.userId!);
+      res.json(effective);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/config/permissions", authMiddleware, async (req, res) => {
     const perms = await storage.getPermissions();
     res.json(perms);

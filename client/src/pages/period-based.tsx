@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPut, apiPost } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePermissions } from "@/contexts/PermissionsContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,6 +70,7 @@ function statusVariant(status: string): "default" | "secondary" | "destructive" 
 
 export default function PeriodBasedPage() {
   const { isFinanceAdmin } = useAuth();
+  const { can } = usePermissions();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -148,10 +150,12 @@ export default function PeriodBasedPage() {
               data-testid="input-search"
             />
           </div>
-          <Button variant="outline" size="sm" data-testid="button-download">
-            <Download className="mr-1.5 h-3.5 w-3.5" />
-            Export
-          </Button>
+          {can("period_based", "canDownload") && (
+            <Button variant="outline" size="sm" data-testid="button-download">
+              <Download className="mr-1.5 h-3.5 w-3.5" />
+              Export
+            </Button>
+          )}
         </div>
       </div>
 
@@ -224,7 +228,7 @@ export default function PeriodBasedPage() {
                           ) : (
                             <span
                               className={`cursor-pointer font-mono ${line.prevMonthTrueUp ? "text-amber-600 dark:text-amber-400 font-medium" : ""}`}
-                              onClick={() => isFinanceAdmin && handleCellEdit(line, "prevMonthTrueUp")}
+                              onClick={() => can("period_based", "canEdit") && handleCellEdit(line, "prevMonthTrueUp")}
                             >
                               {formatAmount(line.prevMonthTrueUp)}
                             </span>
@@ -249,7 +253,7 @@ export default function PeriodBasedPage() {
                           ) : (
                             <span
                               className={`cursor-pointer font-mono ${line.currentMonthTrueUp ? "text-amber-600 dark:text-amber-400 font-medium" : ""}`}
-                              onClick={() => isFinanceAdmin && handleCellEdit(line, "currentMonthTrueUp")}
+                              onClick={() => can("period_based", "canEdit") && handleCellEdit(line, "currentMonthTrueUp")}
                             >
                               {formatAmount(line.currentMonthTrueUp)}
                             </span>
