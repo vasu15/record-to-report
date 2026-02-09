@@ -474,28 +474,36 @@ export const storage = {
     const existing = await db.select().from(rolePermissions)
       .where(and(eq(rolePermissions.role, role), eq(rolePermissions.permission, permission)));
 
-    const updateData: Record<string, boolean> = { [field]: value };
+    const fieldMap: Record<string, any> = {
+      canView: rolePermissions.canView,
+      canCreate: rolePermissions.canCreate,
+      canEdit: rolePermissions.canEdit,
+      canDelete: rolePermissions.canDelete,
+      canApprove: rolePermissions.canApprove,
+      canDownload: rolePermissions.canDownload,
+      canInvite: rolePermissions.canInvite,
+    };
+
+    const column = fieldMap[field];
+    if (!column) throw new Error(`Invalid permission field: ${field}`);
 
     if (existing.length > 0) {
       await db.update(rolePermissions)
-        .set(updateData)
+        .set({ [field]: value } as any)
         .where(and(eq(rolePermissions.role, role), eq(rolePermissions.permission, permission)));
     } else {
       await db.insert(rolePermissions).values({
         role,
         permission,
-        canView: false,
-        canCreate: false,
-        canEdit: false,
-        canDelete: false,
-        canApprove: false,
-        canDownload: false,
-        canInvite: false,
-        ...updateData,
+        canView: field === "canView" ? value : false,
+        canCreate: field === "canCreate" ? value : false,
+        canEdit: field === "canEdit" ? value : false,
+        canDelete: field === "canDelete" ? value : false,
+        canApprove: field === "canApprove" ? value : false,
+        canDownload: field === "canDownload" ? value : false,
+        canInvite: field === "canInvite" ? value : false,
       });
     }
-    return db.select().from(rolePermissions)
-      .where(and(eq(rolePermissions.role, role), eq(rolePermissions.permission, permission)));
   },
 
   // Dashboard

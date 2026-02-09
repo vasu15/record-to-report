@@ -69,15 +69,6 @@ export async function registerRoutes(
     res.json(config);
   });
 
-  app.put("/api/config/:key", authMiddleware, requireRole("Finance Admin"), async (req, res) => {
-    try {
-      await storage.updateConfig(req.params.key, req.body.value, req.userId!);
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ message: err.message });
-    }
-  });
-
   app.get("/api/config/permissions", authMiddleware, async (req, res) => {
     const perms = await storage.getPermissions();
     res.json(perms);
@@ -89,9 +80,18 @@ export async function registerRoutes(
       if (!role || !permission || !field) return res.status(400).json({ message: "role, permission, and field are required" });
       const validFields = ["canView", "canCreate", "canEdit", "canDelete", "canApprove", "canDownload", "canInvite"];
       if (!validFields.includes(field)) return res.status(400).json({ message: "Invalid field" });
-      const result = await storage.updatePermission(role, permission, field, !!value);
+      await storage.updatePermission(role, permission, field, !!value);
       await storage.logAudit(req.userId!, "Update Permission", "permission", `${role}:${permission}:${field}=${value}`);
-      res.json(result);
+      res.json({ success: true, field, value: !!value });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/config/:key", authMiddleware, requireRole("Finance Admin"), async (req, res) => {
+    try {
+      await storage.updateConfig(req.params.key, req.body.value, req.userId!);
+      res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
