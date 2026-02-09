@@ -650,7 +650,34 @@ export const storage = {
   },
 
   async createPoLine(data: any) {
-    const [line] = await db.insert(poLines).values(data).returning();
+    const [line] = await db.insert(poLines).values(data)
+      .onConflictDoUpdate({
+        target: poLines.uniqueId,
+        set: {
+          uploadId: data.uploadId,
+          poNumber: data.poNumber,
+          poLineItem: data.poLineItem,
+          vendorName: data.vendorName,
+          itemDescription: data.itemDescription,
+          projectName: data.projectName,
+          wbsElement: data.wbsElement,
+          costCenter: data.costCenter,
+          profitCenter: data.profitCenter,
+          glAccount: data.glAccount,
+          docType: data.docType,
+          startDate: data.startDate,
+          endDate: data.endDate,
+          plant: data.plant,
+          netAmount: data.netAmount,
+          prNumber: data.prNumber,
+          prOwnerId: data.prOwnerId,
+          costCenterOwnerId: data.costCenterOwnerId,
+          documentDate: data.documentDate,
+          category: data.category,
+          status: data.status,
+        },
+      })
+      .returning();
     return line;
   },
 
