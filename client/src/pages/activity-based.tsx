@@ -21,7 +21,8 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { Search, UserPlus, CheckCircle, Clock, Send, Activity } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Search, UserPlus, CheckCircle, Clock, Send, Activity, Calculator, Pencil } from "lucide-react";
 
 function formatAmount(v: number | null | undefined) {
   if (v == null) return "-";
@@ -67,6 +68,16 @@ function AssignmentTab() {
     },
   });
 
+  const categoryMutation = useMutation({
+    mutationFn: ({ id, category }: { id: number; category: string }) =>
+      apiPut(`/api/po-lines/${id}/category`, { category }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/activity-based"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/period-based"] });
+      toast({ title: "Updated", description: "Category updated successfully." });
+    },
+  });
+
   const filtered = (lines || []).filter((l: any) =>
     !search || l.poNumber?.toLowerCase().includes(search.toLowerCase()) ||
     l.vendorName?.toLowerCase().includes(search.toLowerCase())
@@ -105,11 +116,48 @@ function AssignmentTab() {
                       <TableHead className="min-w-[50px]">Line</TableHead>
                       <TableHead className="min-w-[140px]">Vendor</TableHead>
                       <TableHead className="min-w-[180px]">Description</TableHead>
-                      <TableHead className="text-right min-w-[100px]">Net Amt</TableHead>
-                      <TableHead className="min-w-[80px]">CC</TableHead>
-                      <TableHead className="min-w-[120px]">Assigned To</TableHead>
-                      <TableHead className="min-w-[80px]">Status</TableHead>
-                      <TableHead className="min-w-[80px]">Actions</TableHead>
+                      <TableHead className="text-right min-w-[100px]">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center gap-1 italic cursor-help">
+                              <Calculator className="h-3.5 w-3.5" />
+                              Net Amt
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>Net order amount from PO</TooltipContent>
+                        </Tooltip>
+                      </TableHead>
+                      <TableHead className="min-w-[80px]">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="cursor-help">CC</span>
+                          </TooltipTrigger>
+                          <TooltipContent>Cost Center code</TooltipContent>
+                        </Tooltip>
+                      </TableHead>
+                      <TableHead className="min-w-[120px]">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="italic cursor-help">Assigned To</span>
+                          </TooltipTrigger>
+                          <TooltipContent>Business user assigned to verify this PO</TooltipContent>
+                        </Tooltip>
+                      </TableHead>
+                      <TableHead className="min-w-[80px]">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="italic cursor-help">Status</span>
+                          </TooltipTrigger>
+                          <TooltipContent>Current assignment status</TooltipContent>
+                        </Tooltip>
+                      </TableHead>
+                      <TableHead className="min-w-[100px]">Category</TableHead>
+                      <TableHead className="min-w-[80px]">
+                        <span className="inline-flex items-center gap-1">
+                          <Pencil className="h-3.5 w-3.5" />
+                          Actions
+                        </span>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -123,6 +171,24 @@ function AssignmentTab() {
                         <TableCell className="text-xs font-mono">{line.costCenter}</TableCell>
                         <TableCell className="text-xs">{line.assignedToName || "-"}</TableCell>
                         <TableCell>{statusBadge(line.assignmentStatus || "Not Assigned")}</TableCell>
+                        <TableCell>
+                          {can("activity_based", "canEdit") ? (
+                            <Select
+                              value={line.category || "Activity"}
+                              onValueChange={(val) => categoryMutation.mutate({ id: line.id, category: val })}
+                            >
+                              <SelectTrigger className="h-8 text-xs w-[100px]" data-testid={`select-category-${line.id}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Period">Period</SelectItem>
+                                <SelectItem value="Activity">Activity</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <span className="text-xs">{line.category || "Activity"}</span>
+                          )}
+                        </TableCell>
                         <TableCell>
                           {can("activity_based", "canCreate") && (
                             <Button
@@ -223,10 +289,31 @@ function ResponseTab() {
                     <TableHead>Vendor</TableHead>
                     <TableHead className="text-right">Net Amount</TableHead>
                     <TableHead>Assigned To</TableHead>
-                    <TableHead>Completion</TableHead>
-                    <TableHead className="text-right">Provision Amt</TableHead>
+                    <TableHead>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="cursor-help">Completion</span>
+                        </TooltipTrigger>
+                        <TooltipContent>Work completion percentage reported by business user</TooltipContent>
+                      </Tooltip>
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="cursor-help">Provision Amt</span>
+                        </TooltipTrigger>
+                        <TooltipContent>Provision amount suggested by business user</TooltipContent>
+                      </Tooltip>
+                    </TableHead>
                     <TableHead>Comments</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="cursor-help">Status</span>
+                        </TooltipTrigger>
+                        <TooltipContent>Response approval status</TooltipContent>
+                      </Tooltip>
+                    </TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>

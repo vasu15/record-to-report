@@ -169,6 +169,7 @@ export const storage = {
         remarks: calc?.remarks || "",
         finalProvision: Math.round(finalProvision),
         status: line.status || "Draft",
+        category: line.category || "Period",
       };
     });
   },
@@ -236,6 +237,7 @@ export const storage = {
         assignedToName: assignedUser?.name || null,
         assignmentStatus: assign?.status || "Not Assigned",
         assignedDate: assign?.assignedDate || null,
+        category: line.category || "Activity",
       };
     });
   },

@@ -3,8 +3,10 @@ import { createServer, type Server } from "http";
 import multer from "multer";
 import Papa from "papaparse";
 import { storage } from "./storage";
+import { db } from "./db";
+import { eq, and } from "drizzle-orm";
 import { authMiddleware, requireRole, generateToken, comparePassword } from "./auth";
-import { loginSchema } from "@shared/schema";
+import { loginSchema, poLines } from "@shared/schema";
 import { Readable } from "stream";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -165,6 +167,48 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       await storage.updatePeriodRemarks(id, req.body.remarks, req.userId!);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Submit period-based to approver
+  app.post("/api/period-based/submit", authMiddleware, requireRole("Finance Admin"), async (req, res) => {
+    try {
+      const lines = await db.select().from(poLines).where(and(eq(poLines.category, "Period"), eq(poLines.status, "Draft")));
+      if (lines.length === 0) return res.status(400).json({ message: "No draft period lines to submit" });
+      await db.update(poLines).set({ status: "Submitted" }).where(and(eq(poLines.category, "Period"), eq(poLines.status, "Draft")));
+      await storage.logAudit(req.userId!, "Submit Period Accruals", "period_based", "batch", { count: lines.length });
+      res.json({ success: true, count: lines.length });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Approve period-based submissions
+  app.put("/api/period-based/approve", authMiddleware, requireRole("Finance Approver", "Finance Admin"), async (req, res) => {
+    try {
+      const lines = await db.select().from(poLines).where(and(eq(poLines.category, "Period"), eq(poLines.status, "Submitted")));
+      if (lines.length === 0) return res.status(400).json({ message: "No submitted period lines to approve" });
+      await db.update(poLines).set({ status: "Approved" }).where(and(eq(poLines.category, "Period"), eq(poLines.status, "Submitted")));
+      await storage.logAudit(req.userId!, "Approve Period Accruals", "period_based", "batch", { count: lines.length });
+      res.json({ success: true, count: lines.length });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Change PO line category
+  app.put("/api/po-lines/:id/category", authMiddleware, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { category } = req.body;
+      if (!["Period", "Activity"].includes(category)) {
+        return res.status(400).json({ message: "Category must be 'Period' or 'Activity'" });
+      }
+      await db.update(poLines).set({ category }).where(eq(poLines.id, id));
+      await storage.logAudit(req.userId!, "Change Category", "po_line", String(id), { category });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -344,21 +388,116 @@ export async function registerRoutes(
 
   app.get("/api/reports/export", authMiddleware, async (req, res) => {
     try {
+      const columnsParam = req.query.columns as string | undefined;
+      const selectedColumns = columnsParam ? columnsParam.split(",") : null;
+
+      const allColumnMap: Record<string, (l: any) => any> = {
+        "PO Number": l => l.poNumber,
+        "Line Item": l => l.poLineItem,
+        "Vendor": l => l.vendorName,
+        "Description": l => l.itemDescription,
+        "Net Amount": l => l.netAmount,
+        "GL Account": l => l.glAccount,
+        "Cost Center": l => l.costCenter,
+        "Profit Center": l => l.profitCenter,
+        "Plant": l => l.plant,
+        "Start Date": l => l.startDate,
+        "End Date": l => l.endDate,
+        "Total Days": l => l.totalDays,
+        "Prev Month Days": l => l.prevMonthDays,
+        "Prev Month Provision": l => l.prevMonthProvision,
+        "Prev Month True-Up": l => l.prevMonthTrueUp,
+        "Prev Month GRN": l => l.prevMonthGrn,
+        "Carry Forward": l => l.carryForward,
+        "Current Month Days": l => l.currentMonthDays,
+        "Suggested Provision": l => l.suggestedProvision,
+        "Current Month GRN": l => l.currentMonthGrn,
+        "Current Month True-Up": l => l.currentMonthTrueUp,
+        "Remarks": l => l.remarks,
+        "Final Provision": l => l.finalProvision,
+        "Status": l => l.status,
+        "Category": l => l.category,
+      };
+
       const lines = await storage.getPeriodBasedLines();
-      const csvData = lines.map(l => ({
-        "PO Number": l.poNumber,
-        "Line Item": l.poLineItem,
-        "Vendor": l.vendorName,
-        "Description": l.itemDescription,
-        "Net Amount": l.netAmount,
-        "GL Account": l.glAccount,
-        "Cost Center": l.costCenter,
-        "Final Provision": l.finalProvision,
-        "Status": l.status,
-      }));
+      const cols = selectedColumns || Object.keys(allColumnMap);
+      const csvData = lines.map(l => {
+        const row: Record<string, any> = {};
+        cols.forEach(c => { if (allColumnMap[c]) row[c] = allColumnMap[c](l); });
+        return row;
+      });
       const csv = Papa.unparse(csvData);
       res.setHeader("Content-Type", "text/csv");
       res.setHeader("Content-Disposition", "attachment; filename=accruals_report.csv");
+      res.send(csv);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // SAP Post-Ready Report
+  app.get("/api/reports/sap-post-ready", authMiddleware, async (req, res) => {
+    try {
+      const lines = await storage.getPeriodBasedLines();
+      const approved = lines.filter(l => l.status === "Approved");
+      const summary = {
+        totalLines: approved.length,
+        totalProvision: approved.reduce((s, l) => s + l.finalProvision, 0),
+        byGlAccount: {} as Record<string, { count: number; total: number }>,
+        byCostCenter: {} as Record<string, { count: number; total: number }>,
+        lines: approved,
+      };
+      approved.forEach(l => {
+        if (!summary.byGlAccount[l.glAccount]) summary.byGlAccount[l.glAccount] = { count: 0, total: 0 };
+        summary.byGlAccount[l.glAccount].count++;
+        summary.byGlAccount[l.glAccount].total += l.finalProvision;
+        if (!summary.byCostCenter[l.costCenter]) summary.byCostCenter[l.costCenter] = { count: 0, total: 0 };
+        summary.byCostCenter[l.costCenter].count++;
+        summary.byCostCenter[l.costCenter].total += l.finalProvision;
+      });
+      res.json(summary);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/reports/sap-post-ready/export", authMiddleware, async (req, res) => {
+    try {
+      const columnsParam = req.query.columns as string | undefined;
+      const selectedColumns = columnsParam ? columnsParam.split(",") : null;
+
+      const allColumnMap: Record<string, (l: any) => any> = {
+        "PO Number": l => l.poNumber,
+        "Line Item": l => l.poLineItem,
+        "Vendor": l => l.vendorName,
+        "Description": l => l.itemDescription,
+        "Net Amount": l => l.netAmount,
+        "GL Account": l => l.glAccount,
+        "Cost Center": l => l.costCenter,
+        "Profit Center": l => l.profitCenter,
+        "Plant": l => l.plant,
+        "Start Date": l => l.startDate,
+        "End Date": l => l.endDate,
+        "Total Days": l => l.totalDays,
+        "Carry Forward": l => l.carryForward,
+        "Suggested Provision": l => l.suggestedProvision,
+        "Current Month GRN": l => l.currentMonthGrn,
+        "Current Month True-Up": l => l.currentMonthTrueUp,
+        "Remarks": l => l.remarks,
+        "Final Provision": l => l.finalProvision,
+      };
+
+      const lines = await storage.getPeriodBasedLines();
+      const approved = lines.filter(l => l.status === "Approved");
+      const cols = selectedColumns || Object.keys(allColumnMap);
+      const csvData = approved.map(l => {
+        const row: Record<string, any> = {};
+        cols.forEach(c => { if (allColumnMap[c]) row[c] = allColumnMap[c](l); });
+        return row;
+      });
+      const csv = Papa.unparse(csvData);
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", "attachment; filename=sap_post_ready_report.csv");
       res.send(csv);
     } catch (err: any) {
       res.status(500).json({ message: err.message });

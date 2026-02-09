@@ -16,8 +16,12 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Download, Filter, Upload, Search, MessageSquare, Calculator } from "lucide-react";
+import { Download, Filter, Upload, Search, MessageSquare, Calculator, Pencil, Send } from "lucide-react";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
+} from "@/components/ui/select";
 
 interface PeriodLine {
   id: number;
@@ -45,6 +49,7 @@ interface PeriodLine {
   remarks: string;
   finalProvision: number;
   status: string;
+  category: string;
 }
 
 function formatAmount(v: number | null | undefined) {
@@ -53,6 +58,7 @@ function formatAmount(v: number | null | undefined) {
 }
 
 function getRowColor(line: PeriodLine) {
+  if (line.status === "Submitted") return "bg-blue-50/50 dark:bg-blue-950/20";
   if (line.finalProvision < 0) return "bg-red-50/50 dark:bg-red-950/20";
   if (line.finalProvision === 0) return "bg-muted/30";
   if (line.prevMonthTrueUp !== 0 || line.currentMonthTrueUp !== 0) return "bg-yellow-50/50 dark:bg-yellow-950/20";
@@ -63,6 +69,7 @@ function statusVariant(status: string): "default" | "secondary" | "destructive" 
   switch (status) {
     case "Approved": return "default";
     case "Under Review": return "secondary";
+    case "Submitted": return "secondary";
     case "Posted": return "outline";
     default: return "secondary";
   }
@@ -106,6 +113,23 @@ export default function PeriodBasedPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/period-based"] });
       setRemarksOpen(false);
       toast({ title: "Saved", description: "Remarks updated." });
+    },
+  });
+
+  const submitForApproval = useMutation({
+    mutationFn: () => apiPost("/api/period-based/submit", {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/period-based"] });
+      toast({ title: "Submitted for approval" });
+    },
+  });
+
+  const updateCategory = useMutation({
+    mutationFn: ({ id, category }: { id: number; category: string }) =>
+      apiPut(`/api/po-lines/${id}/category`, { category }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/period-based"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/activity-based"] });
     },
   });
 
@@ -156,6 +180,18 @@ export default function PeriodBasedPage() {
               Export
             </Button>
           )}
+          {can("period_based", "canEdit") && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => submitForApproval.mutate()}
+              disabled={submitForApproval.isPending}
+              data-testid="button-submit-approver"
+            >
+              <Send className="mr-1.5 h-3.5 w-3.5" />
+              Send to Approver
+            </Button>
+          )}
         </div>
       </div>
 
@@ -186,17 +222,107 @@ export default function PeriodBasedPage() {
                       <TableHead className="min-w-[80px]">CC</TableHead>
                       <TableHead className="min-w-[70px]">Start</TableHead>
                       <TableHead className="min-w-[70px]">End</TableHead>
-                      <TableHead className="text-right min-w-[50px]">Days</TableHead>
-                      <TableHead className="text-right bg-muted/30 min-w-[70px]">Prev Prov</TableHead>
-                      <TableHead className="text-right bg-muted/30 min-w-[80px]">Prev T/U</TableHead>
-                      <TableHead className="text-right bg-muted/30 min-w-[70px]">Prev GRN</TableHead>
-                      <TableHead className="text-right bg-muted/30 min-w-[80px]">Carry Fwd</TableHead>
-                      <TableHead className="text-right bg-accent/30 min-w-[80px]">Cur Prov</TableHead>
-                      <TableHead className="text-right bg-accent/30 min-w-[70px]">Cur GRN</TableHead>
-                      <TableHead className="text-right bg-accent/30 min-w-[80px]">Cur T/U</TableHead>
-                      <TableHead className="bg-accent/30 min-w-[60px]">Remarks</TableHead>
-                      <TableHead className="text-right font-bold min-w-[100px]">Final</TableHead>
+                      <TableHead className="text-right min-w-[50px]">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center gap-1 italic cursor-help">
+                              <Calculator className="h-3 w-3" />
+                              Days
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>Total contract days between start and end date</TooltipContent>
+                        </Tooltip>
+                      </TableHead>
+                      <TableHead className="text-right bg-muted/30 min-w-[70px]">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center gap-1 italic cursor-help">
+                              <Calculator className="h-3 w-3" />
+                              Prev Prov
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>Previous month calculated provision</TooltipContent>
+                        </Tooltip>
+                      </TableHead>
+                      <TableHead className="text-right bg-muted/30 min-w-[80px] border-b-2 border-primary/50">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center gap-1 cursor-help">
+                              <Pencil className="h-3 w-3" />
+                              Prev T/U
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>Previous month true-up adjustment (editable)</TooltipContent>
+                        </Tooltip>
+                      </TableHead>
+                      <TableHead className="text-right bg-muted/30 min-w-[70px]">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center gap-1 cursor-help">Prev GRN</span>
+                          </TooltipTrigger>
+                          <TooltipContent>Goods Receipt Note value from previous month</TooltipContent>
+                        </Tooltip>
+                      </TableHead>
+                      <TableHead className="text-right bg-muted/30 min-w-[80px]">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center gap-1 italic cursor-help">
+                              <Calculator className="h-3 w-3" />
+                              Carry Fwd
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>Remaining provision carried forward from previous month</TooltipContent>
+                        </Tooltip>
+                      </TableHead>
+                      <TableHead className="text-right bg-accent/30 min-w-[80px]">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center gap-1 italic cursor-help">
+                              <Calculator className="h-3 w-3" />
+                              Cur Prov
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>System-suggested provision for current month</TooltipContent>
+                        </Tooltip>
+                      </TableHead>
+                      <TableHead className="text-right bg-accent/30 min-w-[70px]">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center gap-1 cursor-help">Cur GRN</span>
+                          </TooltipTrigger>
+                          <TooltipContent>Goods Receipt Note value for current month</TooltipContent>
+                        </Tooltip>
+                      </TableHead>
+                      <TableHead className="text-right bg-accent/30 min-w-[80px] border-b-2 border-primary/50">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center gap-1 cursor-help">
+                              <Pencil className="h-3 w-3" />
+                              Cur T/U
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>Current month true-up adjustment (editable)</TooltipContent>
+                        </Tooltip>
+                      </TableHead>
+                      <TableHead className="bg-accent/30 min-w-[60px] border-b-2 border-primary/50">
+                        <span className="inline-flex items-center gap-1">
+                          <Pencil className="h-3 w-3" />
+                          Remarks
+                        </span>
+                      </TableHead>
+                      <TableHead className="text-right font-bold min-w-[100px]">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center gap-1 italic cursor-help">
+                              <Calculator className="h-3 w-3" />
+                              Final
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>Final provision = Carry Forward + Current Provision - Current GRN + Current True-Up</TooltipContent>
+                        </Tooltip>
+                      </TableHead>
                       <TableHead className="min-w-[80px]">Status</TableHead>
+                      <TableHead className="min-w-[100px]">Category</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -227,7 +353,7 @@ export default function PeriodBasedPage() {
                             />
                           ) : (
                             <span
-                              className={`cursor-pointer font-mono ${line.prevMonthTrueUp ? "text-amber-600 dark:text-amber-400 font-medium" : ""}`}
+                              className={`cursor-pointer font-mono border-b border-dashed border-muted-foreground/40 ${line.prevMonthTrueUp ? "text-amber-600 dark:text-amber-400 font-medium" : ""}`}
                               onClick={() => can("period_based", "canEdit") && handleCellEdit(line, "prevMonthTrueUp")}
                             >
                               {formatAmount(line.prevMonthTrueUp)}
@@ -252,7 +378,7 @@ export default function PeriodBasedPage() {
                             />
                           ) : (
                             <span
-                              className={`cursor-pointer font-mono ${line.currentMonthTrueUp ? "text-amber-600 dark:text-amber-400 font-medium" : ""}`}
+                              className={`cursor-pointer font-mono border-b border-dashed border-muted-foreground/40 ${line.currentMonthTrueUp ? "text-amber-600 dark:text-amber-400 font-medium" : ""}`}
                               onClick={() => can("period_based", "canEdit") && handleCellEdit(line, "currentMonthTrueUp")}
                             >
                               {formatAmount(line.currentMonthTrueUp)}
@@ -279,6 +405,24 @@ export default function PeriodBasedPage() {
                           <Badge variant={statusVariant(line.status)} className="text-[10px]">
                             {line.status}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {can("period_based", "canEdit") ? (
+                            <Select
+                              value={line.category || "Period"}
+                              onValueChange={(val) => updateCategory.mutate({ id: line.id, category: val })}
+                            >
+                              <SelectTrigger className="h-7 text-xs w-24" data-testid={`select-category-${line.id}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Period">Period</SelectItem>
+                                <SelectItem value="Activity">Activity</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <span className="text-xs">{line.category || "Period"}</span>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
