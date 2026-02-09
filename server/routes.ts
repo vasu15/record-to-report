@@ -399,6 +399,11 @@ export async function registerRoutes(
         return trimmed;
       });
 
+      if (trimmedRows.length > 0) {
+        console.log("[upload] CSV headers:", Object.keys(trimmedRows[0]));
+        console.log("[upload] First row sample:", JSON.stringify(trimmedRows[0]));
+      }
+
       let periodCount = 0;
       let activityCount = 0;
 
