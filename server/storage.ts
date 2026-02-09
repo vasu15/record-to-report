@@ -470,6 +470,32 @@ export const storage = {
     return db.select().from(rolePermissions);
   },
 
+  async updatePermission(role: string, permission: string, field: string, value: boolean) {
+    const existing = await db.select().from(rolePermissions)
+      .where(and(eq(rolePermissions.role, role), eq(rolePermissions.permission, permission)));
+
+    const updateData: Record<string, boolean> = { [field]: value };
+
+    if (existing.length > 0) {
+      await db.update(rolePermissions)
+        .set(updateData)
+        .where(and(eq(rolePermissions.role, role), eq(rolePermissions.permission, permission)));
+    } else {
+      await db.insert(rolePermissions).values({
+        role,
+        permission,
+        canView: false,
+        canCreate: false,
+        canEdit: false,
+        canDelete: false,
+        canApprove: false,
+        ...updateData,
+      });
+    }
+    return db.select().from(rolePermissions)
+      .where(and(eq(rolePermissions.role, role), eq(rolePermissions.permission, permission)));
+  },
+
   // Dashboard
   async getFinanceDashboard() {
     const periodLines = await db.select().from(poLines).where(eq(poLines.category, "Period"));

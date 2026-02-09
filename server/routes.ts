@@ -83,6 +83,20 @@ export async function registerRoutes(
     res.json(perms);
   });
 
+  app.put("/api/config/permissions", authMiddleware, requireRole("Finance Admin"), async (req, res) => {
+    try {
+      const { role, permission, field, value } = req.body;
+      if (!role || !permission || !field) return res.status(400).json({ message: "role, permission, and field are required" });
+      const validFields = ["canView", "canCreate", "canEdit", "canDelete", "canApprove"];
+      if (!validFields.includes(field)) return res.status(400).json({ message: "Invalid field" });
+      const result = await storage.updatePermission(role, permission, field, !!value);
+      await storage.logAudit(req.userId!, "Update Permission", "permission", `${role}:${permission}:${field}=${value}`);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Users
   app.get("/api/users", authMiddleware, async (req, res) => {
     const users = await storage.getAllUsersWithRoles();

@@ -226,55 +226,106 @@ function CsvUpload() {
 
 function RolePermissionsConfig() {
   const { isFinanceAdmin } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
   const { data, isLoading } = useQuery({
     queryKey: ["/api/config/permissions"],
     queryFn: () => apiGet<any[]>("/api/config/permissions"),
   });
 
+  const togglePermission = useMutation({
+    mutationFn: (params: { role: string; permission: string; field: string; value: boolean }) =>
+      apiPut("/api/config/permissions", params),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/config/permissions"] });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
   if (isLoading) return <Skeleton className="h-64 w-full" />;
 
   const roles = ["Finance Admin", "Finance Approver", "Business User"];
-  const permissions = ["period_based", "activity_based", "non_po", "reports", "users", "config"];
-  const permLabels: Record<string, string> = {
-    period_based: "Period-Based", activity_based: "Activity-Based",
-    non_po: "Non-PO", reports: "Reports", users: "Users", config: "Configuration",
+  const features = ["period_based", "activity_based", "non_po", "reports", "users", "config"];
+  const featureLabels: Record<string, string> = {
+    period_based: "Period-Based Accruals",
+    activity_based: "Activity-Based Accruals",
+    non_po: "Non-PO Accruals",
+    reports: "Reports",
+    users: "User Management",
+    config: "Configuration",
   };
+
+  const uploadPoFeatures = ["period_based", "activity_based", "non_po"];
+
+  const actionFields = [
+    { key: "canView", label: "View" },
+    { key: "canCreate", label: "Upload PO", altLabel: "Create" },
+    { key: "canEdit", label: "Edit" },
+    { key: "canApprove", label: "Approve" },
+  ];
 
   const getPermission = (role: string, perm: string) => {
     return (data || []).find((p: any) => p.role === role && p.permission === perm);
   };
 
+  const handleToggle = (role: string, permission: string, field: string, currentValue: boolean) => {
+    if (!isFinanceAdmin) return;
+    togglePermission.mutate({ role, permission, field, value: !currentValue });
+  };
+
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <h3 className="text-sm font-semibold">Role Permissions</h3>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
+        <h3 className="text-sm font-semibold">Role Permissions Matrix</h3>
+        {!isFinanceAdmin && (
+          <Badge variant="outline" className="text-[10px]">Read Only</Badge>
+        )}
       </CardHeader>
       <CardContent className="p-0">
         <ScrollArea className="w-full">
-          <div className="min-w-[800px]">
+          <div className="min-w-[700px]">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="min-w-[140px]">Role</TableHead>
-                  {permissions.map(p => (
-                    <TableHead key={p} className="text-center min-w-[100px]">{permLabels[p]}</TableHead>
+                  <TableHead className="min-w-[180px] sticky left-0 bg-background z-10">Feature / Module</TableHead>
+                  {roles.map(role => (
+                    <TableHead key={role} className="text-center min-w-[160px]" data-testid={`col-role-${role.replace(/\s+/g, '-').toLowerCase()}`}>
+                      <span className="text-xs font-semibold">{role}</span>
+                    </TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {roles.map(role => (
-                  <TableRow key={role}>
-                    <TableCell className="font-medium text-sm">{role}</TableCell>
-                    {permissions.map(perm => {
-                      const p = getPermission(role, perm);
+                {features.map(feature => (
+                  <TableRow key={feature} data-testid={`row-feature-${feature}`}>
+                    <TableCell className="font-medium text-sm sticky left-0 bg-background z-10">
+                      {featureLabels[feature]}
+                    </TableCell>
+                    {roles.map(role => {
+                      const p = getPermission(role, feature);
                       return (
-                        <TableCell key={perm} className="text-center">
-                          <div className="flex flex-wrap gap-1 justify-center">
-                            {p?.canView && <Badge variant="outline" className="text-[9px]">View</Badge>}
-                            {p?.canCreate && <Badge variant="secondary" className="text-[9px]">Create</Badge>}
-                            {p?.canEdit && <Badge variant="secondary" className="text-[9px]">Edit</Badge>}
-                            {p?.canApprove && <Badge variant="default" className="text-[9px]">Approve</Badge>}
-                            {!p && <span className="text-xs text-muted-foreground">-</span>}
+                        <TableCell key={role} className="text-center">
+                          <div className="flex flex-wrap gap-1.5 justify-center">
+                            {actionFields.map(action => {
+                              const isActive = !!(p as any)?.[action.key];
+                              const displayLabel = action.key === "canCreate" && uploadPoFeatures.includes(feature)
+                                ? action.label
+                                : action.key === "canCreate"
+                                  ? action.altLabel
+                                  : action.label;
+                              return (
+                                <Badge
+                                  key={action.key}
+                                  variant={isActive ? "default" : "outline"}
+                                  className={`text-[10px] cursor-pointer select-none toggle-elevate ${isActive ? "toggle-elevated" : ""} ${!isFinanceAdmin ? "cursor-default no-default-active-elevate" : ""}`}
+                                  onClick={() => handleToggle(role, feature, action.key, isActive)}
+                                  data-testid={`chip-${feature}-${role.replace(/\s+/g, '-').toLowerCase()}-${action.key}`}
+                                >
+                                  {displayLabel}
+                                </Badge>
+                              );
+                            })}
                           </div>
                         </TableCell>
                       );
