@@ -8,6 +8,69 @@ import {
 } from "@shared/schema";
 import { hashPassword } from "./auth";
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function parseDateStr(dateStr: string | null | undefined): Date | null {
+  if (!dateStr) return null;
+  const parts = dateStr.split("/");
+  if (parts.length === 3) {
+    return new Date(parseInt(parts[2]), parseInt(parts[0]) - 1, parseInt(parts[1]));
+  }
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function parseProcessingMonth(monthStr: string) {
+  const parts = monthStr.trim().split(" ");
+  const monthAbbr = parts[0];
+  const year = parseInt(parts[1]);
+  const monthIndex = MONTHS.indexOf(monthAbbr);
+
+  if (monthIndex === -1 || isNaN(year)) {
+    return {
+      year: 2026, month: 1,
+      monthStart: new Date(2026, 1, 1),
+      monthEnd: new Date(2026, 1, 28),
+      prevMonthStart: new Date(2026, 0, 1),
+      prevMonthEnd: new Date(2026, 0, 31),
+      monthLabel: "Feb 2026",
+      prevMonthLabel: "Jan 2026",
+    };
+  }
+
+  const monthStart = new Date(year, monthIndex, 1);
+  const monthEnd = new Date(year, monthIndex + 1, 0);
+
+  let prevMonth = monthIndex - 1;
+  let prevYear = year;
+  if (prevMonth < 0) {
+    prevMonth = 11;
+    prevYear = year - 1;
+  }
+  const prevMonthStart = new Date(prevYear, prevMonth, 1);
+  const prevMonthEnd = new Date(prevYear, prevMonth + 1, 0);
+
+  return {
+    year,
+    month: monthIndex,
+    monthStart,
+    monthEnd,
+    prevMonthStart,
+    prevMonthEnd,
+    monthLabel: `${MONTHS[monthIndex]} ${year}`,
+    prevMonthLabel: `${MONTHS[prevMonth]} ${prevYear}`,
+  };
+}
+
+function calcOverlapDays(periodStart: Date, periodEnd: Date, rangeStart: Date, rangeEnd: Date): number {
+  const effectiveStart = new Date(Math.max(periodStart.getTime(), rangeStart.getTime()));
+  const effectiveEnd = new Date(Math.min(periodEnd.getTime(), rangeEnd.getTime()));
+  if (effectiveEnd >= effectiveStart) {
+    return Math.ceil((effectiveEnd.getTime() - effectiveStart.getTime()) / 86400000) + 1;
+  }
+  return 0;
+}
+
 export const storage = {
   async getUserByEmail(email: string) {
     const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
@@ -91,55 +154,69 @@ export const storage = {
     await db.update(users).set({ lastLogin: new Date() }).where(eq(users.id, id));
   },
 
-  // PO Lines
-  async getPeriodBasedLines() {
+  async getPeriodBasedLines(processingMonth?: string) {
+    const config = await this.getConfigMap();
+    const monthStr = processingMonth || config.processing_month || "Feb 2026";
+    const pm = parseProcessingMonth(monthStr);
+
     const lines = await db.select().from(poLines).where(eq(poLines.category, "Period")).orderBy(poLines.poNumber);
-    const lineIds = lines.map(l => l.id);
+
+    const filteredLines = lines.filter(line => {
+      const start = parseDateStr(line.startDate);
+      const end = parseDateStr(line.endDate);
+      if (!start || !end) {
+        return true;
+      }
+      return start <= pm.monthEnd && end >= pm.monthStart;
+    });
+
+    const lineIds = filteredLines.map(l => l.id);
     if (lineIds.length === 0) return [];
 
-    const calcs = await db.select().from(periodCalculations).where(inArray(periodCalculations.poLineId, lineIds));
+    const calcs = await db.select().from(periodCalculations)
+      .where(and(inArray(periodCalculations.poLineId, lineIds), eq(periodCalculations.processingMonth, monthStr)));
     const grns = await db.select().from(grnTransactions).where(inArray(grnTransactions.poLineId, lineIds));
 
-    return lines.map(line => {
+    return filteredLines.map(line => {
       const calc = calcs.find(c => c.poLineId === line.id);
       const lineGrns = grns.filter(g => g.poLineId === line.id);
-      const totalGrn = lineGrns.reduce((sum, g) => sum + (g.grnValue || 0), 0);
 
-      const start = line.startDate ? new Date(line.startDate) : null;
-      const end = line.endDate ? new Date(line.endDate) : null;
-      const totalDays = start && end ? Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000)) : 1;
-      const dailyRate = (line.netAmount || 0) / totalDays;
+      let prevMonthGrn = 0;
+      let currentMonthGrn = 0;
+      let totalGrnToDate = 0;
 
-      const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-
-      let currentMonthDays = 0;
-      if (start && end) {
-        const effectiveStart = new Date(Math.max(start.getTime(), monthStart.getTime()));
-        const effectiveEnd = new Date(Math.min(end.getTime(), monthEnd.getTime()));
-        if (effectiveEnd >= effectiveStart) {
-          currentMonthDays = Math.ceil((effectiveEnd.getTime() - effectiveStart.getTime()) / 86400000) + 1;
+      for (const g of lineGrns) {
+        const gDate = parseDateStr(g.grnDate);
+        const gVal = g.grnValue || 0;
+        if (gDate) {
+          if (gDate <= pm.monthEnd) {
+            totalGrnToDate += gVal;
+          }
+          if (gDate >= pm.prevMonthStart && gDate <= pm.prevMonthEnd) {
+            prevMonthGrn += gVal;
+          }
+          if (gDate >= pm.monthStart && gDate <= pm.monthEnd) {
+            currentMonthGrn += gVal;
+          }
         }
       }
 
+      const start = parseDateStr(line.startDate);
+      const end = parseDateStr(line.endDate);
+      const totalDays = start && end ? Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1) : 1;
+      const dailyRate = (line.netAmount || 0) / totalDays;
+
+      let currentMonthDays = 0;
       let prevMonthDays = 0;
       if (start && end) {
-        const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
-        const effectiveStart = new Date(Math.max(start.getTime(), prevMonthStart.getTime()));
-        const effectiveEnd = new Date(Math.min(end.getTime(), prevMonthEnd.getTime()));
-        if (effectiveEnd >= effectiveStart) {
-          prevMonthDays = Math.ceil((effectiveEnd.getTime() - effectiveStart.getTime()) / 86400000) + 1;
-        }
+        currentMonthDays = calcOverlapDays(start, end, pm.monthStart, pm.monthEnd);
+        prevMonthDays = calcOverlapDays(start, end, pm.prevMonthStart, pm.prevMonthEnd);
       }
 
       const prevMonthProvision = Math.round(dailyRate * prevMonthDays);
       const suggestedProvision = Math.round(dailyRate * currentMonthDays);
       const prevTrueUp = calc?.prevMonthTrueUp || 0;
       const currTrueUp = calc?.currentMonthTrueUp || 0;
-      const prevMonthGrn = totalGrn * 0.4;
-      const currentMonthGrn = totalGrn * 0.6;
       const carryForward = prevMonthProvision + prevTrueUp - prevMonthGrn;
       const finalProvision = suggestedProvision + currTrueUp - currentMonthGrn + carryForward;
 
@@ -168,8 +245,11 @@ export const storage = {
         currentMonthTrueUp: currTrueUp,
         remarks: calc?.remarks || "",
         finalProvision: Math.round(finalProvision),
+        totalGrnToDate: Math.round(totalGrnToDate),
         status: line.status || "Draft",
         category: line.category || "Period",
+        prevMonthLabel: pm.prevMonthLabel,
+        currentMonthLabel: pm.monthLabel,
       };
     });
   },
@@ -211,18 +291,44 @@ export const storage = {
     }
   },
 
-  // Activity-based
-  async getActivityBasedLines() {
+  async getActivityBasedLines(processingMonth?: string) {
+    const config = await this.getConfigMap();
+    const monthStr = processingMonth || config.processing_month || "Feb 2026";
+    const pm = parseProcessingMonth(monthStr);
+
     const lines = await db.select().from(poLines).where(eq(poLines.category, "Activity")).orderBy(poLines.poNumber);
     const lineIds = lines.map(l => l.id);
     if (lineIds.length === 0) return [];
 
     const assigns = await db.select().from(activityAssignments).where(inArray(activityAssignments.poLineId, lineIds));
     const allUsers = await db.select().from(users);
+    const grns = await db.select().from(grnTransactions).where(inArray(grnTransactions.poLineId, lineIds));
 
     return lines.map(line => {
       const assign = assigns.find(a => a.poLineId === line.id);
       const assignedUser = assign ? allUsers.find(u => u.id === assign.assignedToUserId) : null;
+      const lineGrns = grns.filter(g => g.poLineId === line.id);
+
+      let prevMonthGrn = 0;
+      let currentMonthGrn = 0;
+      let totalGrnToDate = 0;
+
+      for (const g of lineGrns) {
+        const gDate = parseDateStr(g.grnDate);
+        const gVal = g.grnValue || 0;
+        if (gDate) {
+          if (gDate <= pm.monthEnd) {
+            totalGrnToDate += gVal;
+          }
+          if (gDate >= pm.prevMonthStart && gDate <= pm.prevMonthEnd) {
+            prevMonthGrn += gVal;
+          }
+          if (gDate >= pm.monthStart && gDate <= pm.monthEnd) {
+            currentMonthGrn += gVal;
+          }
+        }
+      }
+
       return {
         id: line.id,
         poNumber: line.poNumber || "",
@@ -238,6 +344,11 @@ export const storage = {
         assignmentStatus: assign?.status || "Not Assigned",
         assignedDate: assign?.assignedDate || null,
         category: line.category || "Activity",
+        prevMonthGrn: Math.round(prevMonthGrn),
+        currentMonthGrn: Math.round(currentMonthGrn),
+        totalGrnToDate: Math.round(totalGrnToDate),
+        prevMonthLabel: pm.prevMonthLabel,
+        currentMonthLabel: pm.monthLabel,
       };
     });
   },
@@ -345,7 +456,6 @@ export const storage = {
     await db.update(activityAssignments).set({ status: "Approved" }).where(eq(activityAssignments.id, assignmentId));
   },
 
-  // Non-PO
   async createNonPoForm(data: any, createdBy: number) {
     const [form] = await db.insert(nonpoForms).values({
       formName: data.formName,
@@ -420,7 +530,6 @@ export const storage = {
     await db.update(nonpoSubmissions).set({ status, reviewedBy, reviewedAt: new Date() }).where(eq(nonpoSubmissions.id, id));
   },
 
-  // Approval Rules
   async getRules() {
     return db.select().from(approvalRules).orderBy(approvalRules.priority);
   },
@@ -441,7 +550,6 @@ export const storage = {
     await db.delete(approvalRules).where(eq(approvalRules.id, id));
   },
 
-  // Config
   async getConfigMap() {
     const rows = await db.select().from(systemConfig);
     const map: Record<string, string> = {};
@@ -460,14 +568,12 @@ export const storage = {
     }
   },
 
-  // Notifications
   async getUnreadCount(userId: number) {
     const [result] = await db.select({ count: count() }).from(notifications)
       .where(and(eq(notifications.userId, userId), eq(notifications.isRead, false)));
     return result?.count || 0;
   },
 
-  // Permissions
   async getPermissions() {
     return db.select().from(rolePermissions);
   },
@@ -534,13 +640,23 @@ export const storage = {
     }
   },
 
-  // Dashboard
-  async getFinanceDashboard() {
-    const periodLines = await db.select().from(poLines).where(eq(poLines.category, "Period"));
+  async getFinanceDashboard(processingMonth?: string) {
+    const config = await this.getConfigMap();
+    const monthStr = processingMonth || config.processing_month || "Feb 2026";
+    const pm = parseProcessingMonth(monthStr);
+
+    const allPeriodLines = await db.select().from(poLines).where(eq(poLines.category, "Period"));
     const activityLines = await db.select().from(poLines).where(eq(poLines.category, "Activity"));
     const nonpoSubs = await db.select().from(nonpoSubmissions);
     const allUsers = await db.select().from(users).where(eq(users.status, "Active"));
     const assigns = await db.select().from(activityAssignments);
+
+    const periodLines = allPeriodLines.filter(line => {
+      const start = parseDateStr(line.startDate);
+      const end = parseDateStr(line.endDate);
+      if (!start || !end) return true;
+      return start <= pm.monthEnd && end >= pm.monthStart;
+    });
 
     const totalPeriodProvision = periodLines.reduce((s, l) => s + (l.netAmount || 0), 0);
     const pendingAssigns = assigns.filter(a => a.status === "Assigned").length;
@@ -579,6 +695,9 @@ export const storage = {
       ],
       topVendors,
       statusDistribution,
+      processingMonth: monthStr,
+      currentMonthLabel: pm.monthLabel,
+      prevMonthLabel: pm.prevMonthLabel,
     };
   },
 
@@ -601,7 +720,6 @@ export const storage = {
     };
   },
 
-  // Reports
   async getAnalytics() {
     const allLines = await db.select().from(poLines);
     const vendorMap = new Map<string, number>();
@@ -641,7 +759,6 @@ export const storage = {
     };
   },
 
-  // PO Upload
   async getPoUploads() {
     return db.select().from(poUploads).orderBy(desc(poUploads.uploadDate));
   },
@@ -697,7 +814,6 @@ export const storage = {
     await db.delete(poUploads);
   },
 
-  // Audit
   async logAudit(userId: number, action: string, entityType?: string, entityId?: string, details?: any) {
     await db.insert(auditLog).values({ userId, action, entityType, entityId, details });
   },

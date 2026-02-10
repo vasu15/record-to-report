@@ -49,7 +49,8 @@ export async function registerRoutes(
   // Dashboard
   app.get("/api/dashboard", authMiddleware, async (req, res) => {
     try {
-      const data = await storage.getFinanceDashboard();
+      const processingMonth = req.query.processingMonth as string | undefined;
+      const data = await storage.getFinanceDashboard(processingMonth);
       res.json(data);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -146,7 +147,8 @@ export async function registerRoutes(
   // Period-Based
   app.get("/api/period-based", authMiddleware, requireRole("Finance Admin", "Finance Approver"), async (req, res) => {
     try {
-      const lines = await storage.getPeriodBasedLines();
+      const processingMonth = req.query.processingMonth as string | undefined;
+      const lines = await storage.getPeriodBasedLines(processingMonth);
       res.json(lines);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -218,7 +220,8 @@ export async function registerRoutes(
   // Activity-Based
   app.get("/api/activity-based", authMiddleware, requireRole("Finance Admin", "Finance Approver"), async (req, res) => {
     try {
-      const lines = await storage.getActivityBasedLines();
+      const processingMonth = req.query.processingMonth as string | undefined;
+      const lines = await storage.getActivityBasedLines(processingMonth);
       res.json(lines);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -452,7 +455,8 @@ Respond ONLY with valid JSON in this exact format, no markdown:
         "Category": l => l.category,
       };
 
-      const lines = await storage.getPeriodBasedLines();
+      const processingMonth = req.query.processingMonth as string | undefined;
+      const lines = await storage.getPeriodBasedLines(processingMonth);
       const cols = selectedColumns || Object.keys(allColumnMap);
       const csvData = lines.map(l => {
         const row: Record<string, any> = {};
@@ -471,7 +475,8 @@ Respond ONLY with valid JSON in this exact format, no markdown:
   // SAP Post-Ready Report
   app.get("/api/reports/sap-post-ready", authMiddleware, async (req, res) => {
     try {
-      const lines = await storage.getPeriodBasedLines();
+      const processingMonth = req.query.processingMonth as string | undefined;
+      const lines = await storage.getPeriodBasedLines(processingMonth);
       const approved = lines.filter(l => l.status === "Approved");
       const summary = {
         totalLines: approved.length,
@@ -520,7 +525,8 @@ Respond ONLY with valid JSON in this exact format, no markdown:
         "Final Provision": l => l.finalProvision,
       };
 
-      const lines = await storage.getPeriodBasedLines();
+      const processingMonth = req.query.processingMonth as string | undefined;
+      const lines = await storage.getPeriodBasedLines(processingMonth);
       const approved = lines.filter(l => l.status === "Approved");
       const cols = selectedColumns || Object.keys(allColumnMap);
       const csvData = approved.map(l => {
