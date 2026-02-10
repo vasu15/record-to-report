@@ -840,7 +840,7 @@ export const storage = {
   },
 
   async getCalendarStats() {
-    const allLines = await db.select().from(poLines).where(eq(poLines.category, "Period"));
+    const allLines = await db.select().from(poLines);
     const allGrns = await db.select().from(grnTransactions);
 
     const monthStats: Record<string, { lineCount: number; totalAmount: number; poCount: number; grnTotal: number }> = {};
