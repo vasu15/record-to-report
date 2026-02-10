@@ -16,7 +16,9 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Download, Filter, Upload, Search, MessageSquare, Calculator, Pencil, Send } from "lucide-react";
+import { Download, Filter, Upload, Search, MessageSquare, Calculator, Pencil, Send, Info, ArrowRight } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { DialogDescription } from "@/components/ui/dialog";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -86,6 +88,12 @@ export default function PeriodBasedPage() {
   const [remarksText, setRemarksText] = useState("");
   const [editingCell, setEditingCell] = useState<{ id: number; field: string } | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editModalLine, setEditModalLine] = useState<PeriodLine | null>(null);
+  const [modalPrevTrueUp, setModalPrevTrueUp] = useState("");
+  const [modalCurTrueUp, setModalCurTrueUp] = useState("");
+  const [modalRemarks, setModalRemarks] = useState("");
+  const [modalCategory, setModalCategory] = useState("");
 
   const { data: config } = useQuery({
     queryKey: ["/api/config"],
@@ -132,6 +140,49 @@ export default function PeriodBasedPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/activity-based"] });
     },
   });
+
+  const openEditModal = (line: PeriodLine) => {
+    setEditModalLine(line);
+    setModalPrevTrueUp(String(line.prevMonthTrueUp || 0));
+    setModalCurTrueUp(String(line.currentMonthTrueUp || 0));
+    setModalRemarks(line.remarks || "");
+    setModalCategory(line.category || "Period");
+    setEditModalOpen(true);
+  };
+
+  const computeModalFinal = () => {
+    if (!editModalLine) return 0;
+    const prevTU = parseFloat(modalPrevTrueUp) || 0;
+    const curTU = parseFloat(modalCurTrueUp) || 0;
+    const carryFwd = (editModalLine.prevMonthProvision || 0) + prevTU - (editModalLine.prevMonthGrn || 0);
+    return carryFwd + (editModalLine.suggestedProvision || 0) - (editModalLine.currentMonthGrn || 0) + curTU;
+  };
+
+  const saveEditModal = async () => {
+    if (!editModalLine) return;
+    const prevTU = parseFloat(modalPrevTrueUp) || 0;
+    const curTU = parseFloat(modalCurTrueUp) || 0;
+    try {
+      if (prevTU !== (editModalLine.prevMonthTrueUp || 0)) {
+        await apiPut(`/api/period-based/${editModalLine.id}/true-up`, { field: "prevMonthTrueUp", value: prevTU });
+      }
+      if (curTU !== (editModalLine.currentMonthTrueUp || 0)) {
+        await apiPut(`/api/period-based/${editModalLine.id}/true-up`, { field: "currentMonthTrueUp", value: curTU });
+      }
+      if (modalRemarks !== (editModalLine.remarks || "")) {
+        await apiPut(`/api/period-based/${editModalLine.id}/remarks`, { remarks: modalRemarks });
+      }
+      if (modalCategory !== (editModalLine.category || "Period")) {
+        await apiPut(`/api/po-lines/${editModalLine.id}/category`, { category: modalCategory });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/period-based"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/activity-based"] });
+      setEditModalOpen(false);
+      toast({ title: "Saved", description: "All changes saved successfully." });
+    } catch {
+      toast({ title: "Error", description: "Failed to save changes.", variant: "destructive" });
+    }
+  };
 
   const handleCellEdit = (line: PeriodLine, field: string) => {
     setEditingCell({ id: line.id, field });
@@ -323,6 +374,9 @@ export default function PeriodBasedPage() {
                       </TableHead>
                       <TableHead className="min-w-[80px]">Status</TableHead>
                       <TableHead className="min-w-[100px]">Category</TableHead>
+                      {can("period_based", "canEdit") && (
+                        <TableHead className="min-w-[50px] text-center">Edit</TableHead>
+                      )}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -424,6 +478,18 @@ export default function PeriodBasedPage() {
                             <span className="text-xs">{line.category || "Period"}</span>
                           )}
                         </TableCell>
+                        {can("period_based", "canEdit") && (
+                          <TableCell className="text-center">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openEditModal(line)}
+                              data-testid={`button-edit-row-${line.id}`}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -455,6 +521,161 @@ export default function PeriodBasedPage() {
               data-testid="button-save-remarks"
             >
               Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-edit-row">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-4 w-4" />
+              Edit Line - PO {editModalLine?.poNumber} / {editModalLine?.poLineItem}
+            </DialogTitle>
+            <DialogDescription>
+              {editModalLine?.vendorName} - {editModalLine?.itemDescription}
+            </DialogDescription>
+          </DialogHeader>
+
+          {editModalLine && (
+            <div className="space-y-5">
+              <Card className="border-dashed">
+                <CardContent className="p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <Info className="h-3.5 w-3.5" />
+                    Line Summary (read-only)
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5 text-sm">
+                    <div><span className="text-muted-foreground">Net Amount:</span> <span className="font-mono font-medium">{formatAmount(editModalLine.netAmount)}</span></div>
+                    <div><span className="text-muted-foreground">GL Account:</span> <span className="font-mono">{editModalLine.glAccount}</span></div>
+                    <div><span className="text-muted-foreground">Cost Center:</span> <span className="font-mono">{editModalLine.costCenter}</span></div>
+                    <div><span className="text-muted-foreground">Period:</span> {editModalLine.startDate} <ArrowRight className="inline h-3 w-3" /> {editModalLine.endDate}</div>
+                    <div><span className="text-muted-foreground">Total Days:</span> {editModalLine.totalDays}</div>
+                    <div><span className="text-muted-foreground">Status:</span> <Badge variant={statusVariant(editModalLine.status)} className="text-[10px] ml-1">{editModalLine.status}</Badge></div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="space-y-4">
+                <h4 className="text-sm font-semibold flex items-center gap-2">
+                  <Pencil className="h-3.5 w-3.5" />
+                  Editable Fields
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="modal-prev-trueup" className="text-xs font-medium">Previous Month True-Up</Label>
+                    <Input
+                      id="modal-prev-trueup"
+                      type="number"
+                      value={modalPrevTrueUp}
+                      onChange={e => setModalPrevTrueUp(e.target.value)}
+                      data-testid="input-modal-prev-trueup"
+                    />
+                    <p className="text-[11px] text-muted-foreground leading-tight">
+                      Manual adjustment to the previous month's provision. Use this when the calculated provision didn't match the actual expense. A positive value increases the carry-forward; negative reduces it.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="modal-cur-trueup" className="text-xs font-medium">Current Month True-Up</Label>
+                    <Input
+                      id="modal-cur-trueup"
+                      type="number"
+                      value={modalCurTrueUp}
+                      onChange={e => setModalCurTrueUp(e.target.value)}
+                      data-testid="input-modal-cur-trueup"
+                    />
+                    <p className="text-[11px] text-muted-foreground leading-tight">
+                      Manual adjustment to the current month's provision. Use when the system-suggested provision needs correction due to partial deliveries, price changes, or scope adjustments.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="modal-category" className="text-xs font-medium">Accrual Category</Label>
+                  <Select value={modalCategory} onValueChange={setModalCategory}>
+                    <SelectTrigger data-testid="select-modal-category">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Period">Period-Based</SelectItem>
+                      <SelectItem value="Activity">Activity-Based</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground leading-tight">
+                    <strong>Period-Based:</strong> Provision is calculated proportionally over the contract duration based on elapsed days.
+                    <strong> Activity-Based:</strong> Provision is determined by actual work completion reported by the assigned business user.
+                    Changing category moves this line to the other module.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="modal-remarks" className="text-xs font-medium">Remarks</Label>
+                  <Textarea
+                    id="modal-remarks"
+                    value={modalRemarks}
+                    onChange={e => setModalRemarks(e.target.value)}
+                    placeholder="Add notes or justifications for adjustments..."
+                    rows={3}
+                    data-testid="input-modal-remarks"
+                  />
+                  <p className="text-[11px] text-muted-foreground leading-tight">
+                    Provide context for any adjustments made. Remarks are visible to approvers and auditors, and are included in exported reports.
+                  </p>
+                </div>
+              </div>
+
+              <Card className="border-dashed">
+                <CardContent className="p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <Calculator className="h-3.5 w-3.5" />
+                    Provision Calculation Preview
+                  </div>
+                  <div className="space-y-1 text-sm font-mono">
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-muted-foreground">Previous Month Provision</span>
+                      <span>{formatAmount(editModalLine.prevMonthProvision)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-muted-foreground">+ Previous True-Up</span>
+                      <span className={parseFloat(modalPrevTrueUp) !== (editModalLine.prevMonthTrueUp || 0) ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}>{formatAmount(parseFloat(modalPrevTrueUp) || 0)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-muted-foreground">- Previous GRN</span>
+                      <span>{formatAmount(editModalLine.prevMonthGrn)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4 border-t pt-1">
+                      <span className="text-muted-foreground font-medium">= Carry Forward</span>
+                      <span className="font-medium">{formatAmount((editModalLine.prevMonthProvision || 0) + (parseFloat(modalPrevTrueUp) || 0) - (editModalLine.prevMonthGrn || 0))}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-muted-foreground">+ Current Provision</span>
+                      <span>{formatAmount(editModalLine.suggestedProvision)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-muted-foreground">- Current GRN</span>
+                      <span>{formatAmount(editModalLine.currentMonthGrn)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-muted-foreground">+ Current True-Up</span>
+                      <span className={parseFloat(modalCurTrueUp) !== (editModalLine.currentMonthTrueUp || 0) ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}>{formatAmount(parseFloat(modalCurTrueUp) || 0)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4 border-t pt-1 text-base">
+                      <span className="font-bold">= Final Provision</span>
+                      <span className={`font-bold ${computeModalFinal() < 0 ? "text-destructive" : ""}`}>{formatAmount(computeModalFinal())}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setEditModalOpen(false)} data-testid="button-cancel-edit-modal">Cancel</Button>
+            <Button onClick={saveEditModal} data-testid="button-save-edit-modal">
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>

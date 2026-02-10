@@ -22,7 +22,9 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Search, UserPlus, CheckCircle, Clock, Send, Activity, Calculator, Pencil } from "lucide-react";
+import { Search, UserPlus, CheckCircle, Clock, Send, Activity, Calculator, Pencil, Info, ArrowRight } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { DialogDescription } from "@/components/ui/dialog";
 
 function formatAmount(v: number | null | undefined) {
   if (v == null) return "-";
@@ -46,6 +48,10 @@ function AssignmentTab() {
   const [assignOpen, setAssignOpen] = useState(false);
   const [selectedPo, setSelectedPo] = useState<any>(null);
   const [selectedUser, setSelectedUser] = useState("");
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editModalLine, setEditModalLine] = useState<any>(null);
+  const [modalCategory, setModalCategory] = useState("");
+  const [modalAssignUser, setModalAssignUser] = useState("");
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -84,6 +90,31 @@ function AssignmentTab() {
   );
 
   const businessUsers = (users || []).filter((u: any) => u.roles?.includes("Business User"));
+
+  const openEditModal = (line: any) => {
+    setEditModalLine(line);
+    setModalCategory(line.category || "Activity");
+    setModalAssignUser(line.assignedToUserId ? String(line.assignedToUserId) : "");
+    setEditModalOpen(true);
+  };
+
+  const saveEditModal = async () => {
+    if (!editModalLine) return;
+    try {
+      if (modalCategory !== (editModalLine.category || "Activity")) {
+        await apiPut(`/api/po-lines/${editModalLine.id}/category`, { category: modalCategory });
+      }
+      if (modalAssignUser && modalAssignUser !== String(editModalLine.assignedToUserId || "")) {
+        await apiPost("/api/activity-based/assign", { poLineId: editModalLine.id, assignedToUserId: parseInt(modalAssignUser) });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/activity-based"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/period-based"] });
+      setEditModalOpen(false);
+      toast({ title: "Saved", description: "All changes saved successfully." });
+    } catch {
+      toast({ title: "Error", description: "Failed to save changes.", variant: "destructive" });
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -152,12 +183,10 @@ function AssignmentTab() {
                         </Tooltip>
                       </TableHead>
                       <TableHead className="min-w-[100px]">Category</TableHead>
-                      <TableHead className="min-w-[80px]">
-                        <span className="inline-flex items-center gap-1">
-                          <Pencil className="h-3.5 w-3.5" />
-                          Actions
-                        </span>
-                      </TableHead>
+                      <TableHead className="min-w-[80px]">Actions</TableHead>
+                      {can("activity_based", "canEdit") && (
+                        <TableHead className="min-w-[50px] text-center">Edit</TableHead>
+                      )}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -202,6 +231,18 @@ function AssignmentTab() {
                             </Button>
                           )}
                         </TableCell>
+                        {can("activity_based", "canEdit") && (
+                          <TableCell className="text-center">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openEditModal(line)}
+                              data-testid={`button-edit-row-${line.id}`}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -243,6 +284,104 @@ function AssignmentTab() {
             >
               <Send className="h-3.5 w-3.5 mr-1" />
               Assign
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto" data-testid="dialog-edit-row-activity">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-4 w-4" />
+              Edit Line - PO {editModalLine?.poNumber} / {editModalLine?.poLineItem}
+            </DialogTitle>
+            <DialogDescription>
+              {editModalLine?.vendorName} - {editModalLine?.itemDescription}
+            </DialogDescription>
+          </DialogHeader>
+
+          {editModalLine && (
+            <div className="space-y-5">
+              <Card className="border-dashed">
+                <CardContent className="p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <Info className="h-3.5 w-3.5" />
+                    Line Summary (read-only)
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+                    <div><span className="text-muted-foreground">Net Amount:</span> <span className="font-mono font-medium">{formatAmount(editModalLine.netAmount)}</span></div>
+                    <div><span className="text-muted-foreground">Cost Center:</span> <span className="font-mono">{editModalLine.costCenter}</span></div>
+                    <div><span className="text-muted-foreground">Vendor:</span> {editModalLine.vendorName}</div>
+                    <div><span className="text-muted-foreground">Current Status:</span> {statusBadge(editModalLine.assignmentStatus || "Not Assigned")}</div>
+                    <div><span className="text-muted-foreground">Currently Assigned:</span> {editModalLine.assignedToName || "Unassigned"}</div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="space-y-4">
+                <h4 className="text-sm font-semibold flex items-center gap-2">
+                  <Pencil className="h-3.5 w-3.5" />
+                  Editable Fields
+                </h4>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="modal-activity-category" className="text-xs font-medium">Accrual Category</Label>
+                  <Select value={modalCategory} onValueChange={setModalCategory}>
+                    <SelectTrigger data-testid="select-modal-activity-category">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Period">Period-Based</SelectItem>
+                      <SelectItem value="Activity">Activity-Based</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground leading-tight">
+                    <strong>Activity-Based:</strong> The provision amount is determined by the business user's reported work completion percentage, not by time elapsed.
+                    <strong> Period-Based:</strong> The provision is calculated automatically based on the number of days elapsed in the contract period.
+                    Switching to Period-Based will move this line to the Period-Based module for time-proportional calculations.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="modal-activity-assign" className="text-xs font-medium">Assign to Business User</Label>
+                  <Select value={modalAssignUser} onValueChange={setModalAssignUser}>
+                    <SelectTrigger data-testid="select-modal-activity-assign">
+                      <SelectValue placeholder="Select user..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {businessUsers.map((u: any) => (
+                        <SelectItem key={u.id} value={String(u.id)}>{u.name} ({u.email})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground leading-tight">
+                    The assigned business user will receive this PO in their dashboard and must report the work completion percentage and estimated provision amount. Their response goes through approval before being posted.
+                  </p>
+                </div>
+              </div>
+
+              <Card className="border-dashed">
+                <CardContent className="p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <Info className="h-3.5 w-3.5" />
+                    How Activity-Based Accruals Work
+                  </div>
+                  <ol className="text-[11px] text-muted-foreground leading-relaxed space-y-1 list-decimal list-inside">
+                    <li>Finance assigns a PO line to a business user who manages the related activity.</li>
+                    <li>The business user reports the work completion status (e.g., 50%, 75%) and suggests a provision amount.</li>
+                    <li>Finance reviews the response and approves or requests revisions.</li>
+                    <li>Approved provisions are included in the final accrual posting to SAP.</li>
+                  </ol>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setEditModalOpen(false)} data-testid="button-cancel-edit-modal-activity">Cancel</Button>
+            <Button onClick={saveEditModal} data-testid="button-save-edit-modal-activity">
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>
