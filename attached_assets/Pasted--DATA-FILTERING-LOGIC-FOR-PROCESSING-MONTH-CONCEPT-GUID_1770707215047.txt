@@ -1,0 +1,352 @@
+# **DATA FILTERING LOGIC FOR PROCESSING MONTH - CONCEPT GUIDE**
+
+---
+
+## **CORE CONCEPT: Processing Month Filter**
+
+When user selects **"Feb 2026"** as the processing month, the system needs to show:
+- Which PO lines are relevant for that month
+- What GRN data corresponds to that month
+- How to calculate provisions for that specific month
+
+---
+
+## **PERIOD-BASED ACCRUALS FILTERING**
+
+### **Which PO Lines to Display?**
+
+**RULE: Show PO lines where the service period OVERLAPS with the selected month**
+
+The service period is defined by Start Date and End Date on the PO.
+
+**Include a PO if:**
+- Service starts before or during Feb 2026, AND
+- Service ends during or after Feb 2026
+
+**Visual Examples:**
+
+```
+Timeline for Feb 2026:
+|----Jan----|----Feb----|----Mar----|
+
+PO-001: |=================| (Jan-Jun)
+        Show ✅ - Spans Feb
+
+PO-002: |====| (Dec-Jan)
+        Hide ❌ - Ended before Feb
+
+PO-003:              |====| (Mar-Jun)
+        Hide ❌ - Starts after Feb
+
+PO-004:     |=====| (Jan 15 - Mar 15)
+        Show ✅ - Overlaps Feb
+
+PO-005: |===============================| (Jan 2025 - Dec 2026)
+        Show ✅ - Long-term contract spanning Feb
+```
+
+**Key Point:** Don't use PO creation date or document date for filtering. Only use the service period (Start Date to End Date).
+
+---
+
+## **GRN DATA FILTERING**
+
+For each PO line shown, you need to display GRN data in **month-specific columns**:
+
+### **Three GRN Columns:**
+
+**1. Previous Month GRN (Jan 2026):**
+- Sum all GRN transactions where GRN Date falls in January 2026
+- This represents goods/services already received in the previous month
+
+**2. Current Month GRN (Feb 2026):**
+- Sum all GRN transactions where GRN Date falls in February 2026
+- This represents goods/services received in the current month
+- Reduces the provision needed
+
+**3. Total GRN to Date:**
+- Sum ALL GRN transactions up to end of Feb 2026
+- Shows cumulative receipts
+- Helps track how much of the PO has been consumed
+
+### **Example GRN Display:**
+
+For PO-001 with multiple GRN transactions over time:
+
+```
+PO-001: ₹1,200,000 (Service: Jan 2025 - Dec 2026)
+
+Historical GRNs:
+- Oct 2025: ₹100,000
+- Dec 2025: ₹80,000
+- Jan 2026: ₹50,000  ← Previous month
+- Jan 2026: ₹30,000  ← Previous month
+- Feb 2026: ₹40,000  ← Current month
+- Feb 2026: ₹55,000  ← Current month
+
+When viewing Feb 2026:
+- Prev Month GRN: ₹80,000 (Jan totals)
+- Current Month GRN: ₹95,000 (Feb totals)
+- Total GRN to Date: ₹355,000 (all through Feb)
+- Remaining: ₹845,000
+```
+
+---
+
+## **ACTIVITY-BASED ACCRUALS FILTERING**
+
+### **Which PO Lines to Display?**
+
+**RULE: Show ALL activity-based PO lines regardless of dates**
+
+Activity-based POs don't have service periods (Start Date and End Date are NULL or incomplete), so they can't be filtered by month.
+
+**Reasoning:**
+- These POs require business user input on completion status
+- They're not time-bound like period-based POs
+- They remain active until marked as complete or discontinued
+
+### **GRN Data for Activity-Based:**
+
+Apply the SAME GRN month filtering as period-based:
+- Show Prev Month GRN (Jan 2026)
+- Show Current Month GRN (Feb 2026)
+- Show Total GRN to Date
+
+This helps business users see what's already been received when estimating remaining provision.
+
+---
+
+## **TABLE STRUCTURE RECOMMENDATIONS**
+
+### **Period-Based Table Layout:**
+
+**Left Section (PO Details):**
+- PO Number (sticky column)
+- Vendor
+- Description
+- Net Amount
+- Service Period (Start - End)
+- GL, Cost Center, etc.
+
+**Middle Section (Previous Month - Jan 2026):**
+- Background: Light gray
+- Columns: Days | Provision | True-up | GRN | Carry Forward
+
+**Right Section (Current Month - Feb 2026):**
+- Background: Light blue
+- Columns: Days | Suggested | GRN | True-up | Remarks
+
+**Final Column:**
+- Final Provision (bold, large)
+- Color coded: Green (positive), Red (negative), Gray (zero)
+
+### **Column Headers Should Clearly Show Month:**
+
+```
+PREVIOUS MONTH          CURRENT MONTH          FINAL
+  (Jan 2026)             (Feb 2026)
+```
+
+This prevents confusion about which GRN belongs to which month.
+
+---
+
+## **CALCULATION FLOW FOR FEB 2026**
+
+### **Step 1: Determine Service Days**
+
+For each PO shown:
+1. Calculate total service days (End Date - Start Date + 1)
+2. Calculate how many days fall in Jan 2026
+3. Calculate how many days fall in Feb 2026
+
+### **Step 2: Previous Month (Jan 2026)**
+
+1. Calculate provision: (Net Amount ÷ Total Days) × Jan Days
+2. Fetch user's true-up from database (default 0)
+3. Sum GRNs dated in January 2026
+4. Calculate carry forward: Jan Provision + Jan True-up - Jan GRN
+
+### **Step 3: Current Month (Feb 2026)**
+
+1. Calculate suggested provision: (Net Amount ÷ Total Days) × Feb Days
+2. Fetch user's true-up from database (default 0)
+3. Sum GRNs dated in February 2026
+4. Calculate final provision: Suggested + Carry Forward + Feb True-up - Feb GRN
+
+### **Step 4: Display**
+
+Show all calculations in the table with clear month labels.
+
+---
+
+## **EDGE CASES TO HANDLE**
+
+### **Case 1: PO Service Ends Mid-Month**
+
+```
+PO: Service Feb 1 - Feb 15, 2026
+Net Amount: ₹300,000
+Feb Days: 15 (not full 28)
+Suggested Provision: (₹300,000 ÷ 15) × 15 = ₹300,000
+```
+
+### **Case 2: PO Service Starts Mid-Month**
+
+```
+PO: Service Feb 15 - Jun 30, 2026
+Feb Days: 14 (Feb 15-28)
+Suggested Provision: (Net Amount ÷ Total Days) × 14
+```
+
+### **Case 3: GRN Exceeds Net Amount**
+
+```
+PO: ₹500,000
+GRN to Date: ₹600,000
+Remaining: -₹100,000 (show in red as exception)
+```
+
+### **Case 4: Multiple GRNs in Same Month**
+
+```
+Feb 2026 GRNs:
+- Feb 5: ₹20,000
+- Feb 12: ₹30,000
+- Feb 28: ₹15,000
+Total for Feb: ₹65,000 (sum all)
+```
+
+### **Case 5: No GRNs Yet**
+
+```
+New PO started Feb 1, no goods received yet
+All GRN columns: ₹0
+Full provision needed
+```
+
+---
+
+## **MONTH SELECTOR BEHAVIOR**
+
+### **When User Changes Month Selection:**
+
+From "Feb 2026" to "Mar 2026":
+
+**What Changes:**
+
+1. **Period-Based List:**
+   - Re-filter PO lines (only show POs overlapping Mar 2026)
+   - Some POs may disappear (service ended)
+   - New POs may appear (service starting)
+
+2. **GRN Columns:**
+   - "Previous Month" now shows Feb 2026 GRNs
+   - "Current Month" now shows Mar 2026 GRNs
+   - Total GRN updates to include through Mar 31
+
+3. **Calculations:**
+   - All provisions recalculated for March
+   - Carry forward comes from February
+   - New suggested provision based on March days
+
+**What Doesn't Change:**
+
+1. **Activity-Based List:**
+   - Same POs shown (no date filter)
+   - Only GRN month columns update
+
+2. **PO Master Data:**
+   - Net amounts, vendors, GL accounts stay same
+   - Service periods unchanged
+
+---
+
+## **DASHBOARD METRICS FOR FEB 2026**
+
+When showing Feb 2026 dashboard:
+
+**Period-Based Metric:**
+- Count: Number of POs where service overlaps Feb
+- Value: Sum of net amounts for those POs
+- Provision: Sum of final provisions calculated
+
+**Activity-Based Metric:**
+- Count: All activity POs (no filter)
+- Value: Sum of all activity PO net amounts
+- Provision: Sum of business user responses
+
+**Total GRN Received:**
+- Sum of all GRN transactions dated in Feb 2026
+- Across both period and activity-based POs
+
+---
+
+## **REPORTING CONSIDERATIONS**
+
+### **Downloaded Reports for Feb 2026:**
+
+**Period-Based Sheet:**
+- Include ONLY POs that overlap Feb 2026
+- Show Jan and Feb columns
+- Include calculated provisions
+
+**Activity-Based Sheet:**
+- Include ALL activity POs
+- Show Feb 2026 GRNs
+- Include business responses
+
+**GRN Analysis Sheet:**
+- For each PO, show month-by-month GRN breakdown
+- Highlight Feb 2026 column
+- Show cumulative totals
+
+---
+
+## **USER GUIDANCE IN UI**
+
+Add helper text to clarify filtering:
+
+**On Period-Based Tab:**
+```
+Showing PO lines where service period includes Feb 2026
+```
+
+**On Month Selector:**
+```
+Processing Month: Feb 2026
+This filters Period-Based POs by service date overlap
+Activity-Based POs are always shown
+```
+
+**On GRN Columns:**
+```
+Tooltip: "Total of all goods receipts posted in February 2026"
+```
+
+---
+
+## **SUMMARY: QUICK REFERENCE**
+
+### **For Period-Based POs:**
+✅ Filter by: Service period overlaps with selected month
+✅ Show GRNs: Month-specific totals
+✅ Calculate: Provisions based on days in selected month
+
+### **For Activity-Based POs:**
+✅ Filter by: No date filter (show all)
+✅ Show GRNs: Month-specific totals
+✅ Calculate: Based on business user input (not dates)
+
+### **For GRN Data:**
+✅ Always filter GRNs by transaction date
+✅ Group into: Previous Month | Current Month | Total
+✅ Use for: Reducing provisions and tracking consumption
+
+### **Month Selection:**
+✅ Affects: PO list filtering, GRN grouping, provision calculations
+✅ Default: Current system month (e.g., Feb 2026)
+✅ Change: Updates entire view dynamically
+
+This is the complete conceptual framework for month-based filtering. Does this clarify the logic?
