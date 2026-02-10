@@ -296,7 +296,15 @@ export const storage = {
     const monthStr = processingMonth || config.processing_month || "Feb 2026";
     const pm = parseProcessingMonth(monthStr);
 
-    const lines = await db.select().from(poLines).where(eq(poLines.category, "Activity")).orderBy(poLines.poNumber);
+    const allLines = await db.select().from(poLines).where(eq(poLines.category, "Activity")).orderBy(poLines.poNumber);
+
+    const lines = allLines.filter(line => {
+      const start = parseDateStr(line.startDate);
+      const end = parseDateStr(line.endDate);
+      if (!start || !end) return true;
+      return start <= pm.monthEnd && end >= pm.monthStart;
+    });
+
     const lineIds = lines.map(l => l.id);
     if (lineIds.length === 0) return [];
 

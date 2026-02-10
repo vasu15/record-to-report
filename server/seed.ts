@@ -120,21 +120,69 @@ export async function seedDatabase() {
   ];
   await db.insert(rolePermissions).values(permissions);
 
+  const activityDateRanges: Record<string, { startDate: string; endDate: string; grnDateOverride: string }> = {
+    "3000002021": { startDate: "10/1/2025", endDate: "12/31/2025", grnDateOverride: "11/15/2025" },
+    "3000002025": { startDate: "10/1/2025", endDate: "12/31/2025", grnDateOverride: "11/15/2025" },
+    "3000002026": { startDate: "10/1/2025", endDate: "12/31/2025", grnDateOverride: "11/15/2025" },
+    "3000002027": { startDate: "10/1/2025", endDate: "12/31/2025", grnDateOverride: "12/10/2025" },
+    "3000002028": { startDate: "10/1/2025", endDate: "12/31/2025", grnDateOverride: "12/10/2025" },
+    "3000002029": { startDate: "10/1/2025", endDate: "12/31/2025", grnDateOverride: "12/10/2025" },
+    "3000002030": { startDate: "10/1/2025", endDate: "12/31/2025", grnDateOverride: "12/10/2025" },
+    "3000002031": { startDate: "11/1/2025", endDate: "2/28/2026", grnDateOverride: "12/20/2025" },
+    "3000002032": { startDate: "11/1/2025", endDate: "2/28/2026", grnDateOverride: "12/20/2025" },
+    "3000002033": { startDate: "11/1/2025", endDate: "2/28/2026", grnDateOverride: "12/20/2025" },
+    "3000002034": { startDate: "11/1/2025", endDate: "2/28/2026", grnDateOverride: "1/10/2026" },
+    "3000002035": { startDate: "11/1/2025", endDate: "2/28/2026", grnDateOverride: "1/10/2026" },
+    "3000002036": { startDate: "11/1/2025", endDate: "2/28/2026", grnDateOverride: "1/10/2026" },
+    "3000002037": { startDate: "11/1/2025", endDate: "2/28/2026", grnDateOverride: "1/10/2026" },
+    "3000002038": { startDate: "1/1/2026", endDate: "3/31/2026", grnDateOverride: "1/20/2026" },
+    "3000002039": { startDate: "1/1/2026", endDate: "3/31/2026", grnDateOverride: "1/20/2026" },
+    "3000002040": { startDate: "1/1/2026", endDate: "3/31/2026", grnDateOverride: "1/20/2026" },
+    "3000002044": { startDate: "1/1/2026", endDate: "3/31/2026", grnDateOverride: "2/5/2026" },
+    "3000002045": { startDate: "1/1/2026", endDate: "3/31/2026", grnDateOverride: "2/5/2026" },
+    "3000002049": { startDate: "1/1/2026", endDate: "3/31/2026", grnDateOverride: "2/5/2026" },
+    "3000002050": { startDate: "1/1/2026", endDate: "3/31/2026", grnDateOverride: "2/5/2026" },
+    "3000002051": { startDate: "2/1/2026", endDate: "4/30/2026", grnDateOverride: "2/15/2026" },
+    "3000002052": { startDate: "2/1/2026", endDate: "4/30/2026", grnDateOverride: "2/15/2026" },
+    "3000002053": { startDate: "2/1/2026", endDate: "4/30/2026", grnDateOverride: "2/15/2026" },
+    "3000002065": { startDate: "2/1/2026", endDate: "4/30/2026", grnDateOverride: "2/15/2026" },
+    "3000002068": { startDate: "2/1/2026", endDate: "4/30/2026", grnDateOverride: "2/15/2026" },
+    "3000002069": { startDate: "2/1/2026", endDate: "4/30/2026", grnDateOverride: "2/15/2026" },
+    "3000002070": { startDate: "2/1/2026", endDate: "4/30/2026", grnDateOverride: "2/15/2026" },
+    "3000002071": { startDate: "3/1/2026", endDate: "5/31/2026", grnDateOverride: "3/10/2026" },
+    "3000002073": { startDate: "3/1/2026", endDate: "5/31/2026", grnDateOverride: "3/10/2026" },
+    "3000002075": { startDate: "3/1/2026", endDate: "5/31/2026", grnDateOverride: "3/10/2026" },
+    "3000002076": { startDate: "3/1/2026", endDate: "5/31/2026", grnDateOverride: "3/10/2026" },
+    "3000002078": { startDate: "3/1/2026", endDate: "5/31/2026", grnDateOverride: "3/10/2026" },
+    "3000002086": { startDate: "4/1/2026", endDate: "6/30/2026", grnDateOverride: "4/15/2026" },
+    "3000002087": { startDate: "4/1/2026", endDate: "6/30/2026", grnDateOverride: "4/15/2026" },
+    "3000002088": { startDate: "4/1/2026", endDate: "6/30/2026", grnDateOverride: "4/15/2026" },
+    "3000002089": { startDate: "4/1/2026", endDate: "6/30/2026", grnDateOverride: "4/15/2026" },
+    "3000002097": { startDate: "4/1/2026", endDate: "6/30/2026", grnDateOverride: "4/15/2026" },
+    "3000002098": { startDate: "4/1/2026", endDate: "6/30/2026", grnDateOverride: "4/15/2026" },
+  };
+
   for (const po of samplePoData) {
     const { grnDate, grnDoc, grnMovementType, grnValue, projectName, wbsElement, documentDate, ...lineData } = po;
+    const isActivity = !lineData.startDate || !lineData.endDate;
+    const dateOverride = isActivity && lineData.poNumber ? activityDateRanges[lineData.poNumber] : null;
+
     const [line] = await db.insert(poLines).values({
       ...lineData,
+      startDate: dateOverride ? dateOverride.startDate : lineData.startDate,
+      endDate: dateOverride ? dateOverride.endDate : lineData.endDate,
       projectName,
       wbsElement,
       documentDate,
-      category: lineData.startDate && lineData.endDate ? "Period" : "Activity",
+      category: isActivity ? "Activity" : "Period",
       status: "Draft",
     }).returning();
 
     if (grnDoc || (grnValue && grnValue > 0)) {
+      const resolvedGrnDate = (isActivity && dateOverride) ? dateOverride.grnDateOverride : (grnDate || "");
       await db.insert(grnTransactions).values({
         poLineId: line.id,
-        grnDate: grnDate || "",
+        grnDate: resolvedGrnDate,
         grnDoc: grnDoc || "",
         grnMovementType: grnMovementType || "",
         grnValue: grnValue || 0,
