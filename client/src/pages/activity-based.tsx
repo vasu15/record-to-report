@@ -141,49 +141,70 @@ function AssignmentTab() {
             </div>
           ) : (
             <ScrollArea className="w-full">
-              <div className="min-w-[1200px]">
+              <div className="min-w-[1600px]">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead className="min-w-[120px]">PO Number</TableHead>
                       <TableHead className="min-w-[50px]">Line</TableHead>
                       <TableHead className="min-w-[140px]">Vendor</TableHead>
-                      <TableHead className="min-w-[180px]">Description</TableHead>
-                      <TableHead className="text-right min-w-[100px]">
+                      <TableHead className="min-w-[160px]">Description</TableHead>
+                      <TableHead className="text-right min-w-[100px]">Net Amt</TableHead>
+                      <TableHead className="min-w-[80px]">
                         <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex items-center gap-1 italic cursor-help">
-                              <Calculator className="h-3.5 w-3.5" />
-                              Net Amt
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>Net order amount from PO</TooltipContent>
+                          <TooltipTrigger asChild><span className="cursor-help">GL</span></TooltipTrigger>
+                          <TooltipContent>GL Account code</TooltipContent>
                         </Tooltip>
                       </TableHead>
                       <TableHead className="min-w-[80px]">
                         <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="cursor-help">CC</span>
-                          </TooltipTrigger>
+                          <TooltipTrigger asChild><span className="cursor-help">CC</span></TooltipTrigger>
                           <TooltipContent>Cost Center code</TooltipContent>
+                        </Tooltip>
+                      </TableHead>
+                      <TableHead className="min-w-[70px]">Start</TableHead>
+                      <TableHead className="min-w-[70px]">End</TableHead>
+                      <TableHead className="min-w-[80px]">Plant</TableHead>
+                      <TableHead className="text-right min-w-[80px] bg-muted/30">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center gap-1 italic cursor-help">
+                              <Calculator className="h-3 w-3" />
+                              Prev GRN
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>GRN value from previous month (derived)</TooltipContent>
+                        </Tooltip>
+                      </TableHead>
+                      <TableHead className="text-right min-w-[80px] bg-accent/30">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center gap-1 italic cursor-help">
+                              <Calculator className="h-3 w-3" />
+                              Cur GRN
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>GRN value for current processing month (derived)</TooltipContent>
+                        </Tooltip>
+                      </TableHead>
+                      <TableHead className="text-right min-w-[90px] bg-accent/30">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center gap-1 italic cursor-help">
+                              <Calculator className="h-3 w-3" />
+                              Total GRN
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>Cumulative GRN value to date (derived)</TooltipContent>
                         </Tooltip>
                       </TableHead>
                       <TableHead className="min-w-[120px]">
                         <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="italic cursor-help">Assigned To</span>
-                          </TooltipTrigger>
+                          <TooltipTrigger asChild><span className="cursor-help">Assigned To</span></TooltipTrigger>
                           <TooltipContent>Business user assigned to verify this PO</TooltipContent>
                         </Tooltip>
                       </TableHead>
-                      <TableHead className="min-w-[80px]">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="italic cursor-help">Status</span>
-                          </TooltipTrigger>
-                          <TooltipContent>Current assignment status</TooltipContent>
-                        </Tooltip>
-                      </TableHead>
+                      <TableHead className="min-w-[90px]">Status</TableHead>
                       <TableHead className="min-w-[100px]">Category</TableHead>
                       <TableHead className="min-w-[80px]">Actions</TableHead>
                       {can("activity_based", "canEdit") && (
@@ -193,13 +214,20 @@ function AssignmentTab() {
                   </TableHeader>
                   <TableBody>
                     {filtered.map((line: any) => (
-                      <TableRow key={line.id}>
+                      <TableRow key={line.id} data-testid={`row-activity-${line.id}`}>
                         <TableCell className="font-mono text-xs font-medium">{line.poNumber}</TableCell>
                         <TableCell className="text-xs">{line.poLineItem}</TableCell>
                         <TableCell className="text-xs truncate max-w-[140px]">{line.vendorName}</TableCell>
-                        <TableCell className="text-xs truncate max-w-[180px]">{line.itemDescription}</TableCell>
+                        <TableCell className="text-xs truncate max-w-[160px]">{line.itemDescription}</TableCell>
                         <TableCell className="text-right text-xs font-mono">{formatAmount(line.netAmount)}</TableCell>
+                        <TableCell className="text-xs font-mono">{line.glAccount || "-"}</TableCell>
                         <TableCell className="text-xs font-mono">{line.costCenter}</TableCell>
+                        <TableCell className="text-xs">{line.startDate || "-"}</TableCell>
+                        <TableCell className="text-xs">{line.endDate || "-"}</TableCell>
+                        <TableCell className="text-xs">{line.plant || "-"}</TableCell>
+                        <TableCell className="text-right text-xs font-mono bg-muted/10">{formatAmount(line.prevMonthGrn)}</TableCell>
+                        <TableCell className="text-right text-xs font-mono bg-accent/10">{formatAmount(line.currentMonthGrn)}</TableCell>
+                        <TableCell className="text-right text-xs font-mono bg-accent/10">{formatAmount(line.totalGrnToDate)}</TableCell>
                         <TableCell className="text-xs">{line.assignedToName || "-"}</TableCell>
                         <TableCell>{statusBadge(line.assignmentStatus || "Not Assigned")}</TableCell>
                         <TableCell>

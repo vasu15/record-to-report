@@ -232,18 +232,18 @@ function CalendarView() {
               const monthLabel = parts[0];
               const yearLabel = parts[1];
               const lineCount = stats?.lineCount || 0;
-              const isJan = monthLabel === "Jan";
+              const hasData = !!stats && stats.lineCount > 0;
 
               let opacity = 1;
               if (!isHovered) {
-                if (distance >= 5) opacity = 0.15;
-                else if (distance >= 4) opacity = 0.25;
-                else if (distance >= 3) opacity = 0.4;
-                else if (distance >= 2) opacity = 0.65;
+                if (distance >= 5) opacity = 0.2;
+                else if (distance >= 4) opacity = 0.35;
+                else if (distance >= 3) opacity = 0.5;
+                else if (distance >= 2) opacity = 0.7;
                 else if (distance >= 1) opacity = 0.85;
               } else {
-                if (distance >= 8) opacity = 0.3;
-                else if (distance >= 6) opacity = 0.5;
+                if (distance >= 8) opacity = 0.4;
+                else if (distance >= 6) opacity = 0.55;
                 else if (distance >= 4) opacity = 0.7;
                 else if (distance >= 2) opacity = 0.85;
               }
@@ -259,31 +259,24 @@ function CalendarView() {
                     transition-all duration-300 ease-out
                     ${isSelected
                       ? "bg-primary text-primary-foreground ring-2 ring-primary/30 ring-offset-2 ring-offset-card"
-                      : "hover-elevate"
+                      : hasData ? "bg-primary/5 hover-elevate" : "hover-elevate"
                     }
-                    ${isHovered ? "w-[88px] py-2.5 px-2" : "w-[72px] py-2 px-1.5"}
+                    ${isHovered ? "w-[96px] py-2.5 px-2" : "w-[80px] py-2 px-1.5"}
                   `}
                   style={{
                     opacity,
                     transform: isSelected ? "scale(1.05)" : "scale(1)",
                   }}
                 >
-                  {isJan && (
-                    <p className={`text-[9px] font-medium mb-0.5 ${isSelected ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                      {yearLabel}
-                    </p>
-                  )}
-                  <p className={`text-xs font-bold ${isSelected ? "" : ""}`}>
+                  <p className={`text-xs font-bold`}>
                     {monthLabel}
                   </p>
-                  {!isJan && (
-                    <p className={`text-[9px] ${isSelected ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                      {yearLabel}
-                    </p>
-                  )}
+                  <p className={`text-[9px] ${isSelected ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                    {yearLabel}
+                  </p>
 
-                  {(isHovered || isSelected || distance <= 2) && stats ? (
-                    <div className="mt-1.5 space-y-1">
+                  {hasData ? (
+                    <div className="mt-1.5 space-y-0.5">
                       <div className="mx-auto rounded-full overflow-hidden h-1" style={{ width: "80%", backgroundColor: isSelected ? "rgba(255,255,255,0.2)" : "hsl(var(--muted))" }}>
                         <div
                           className="h-full rounded-full transition-all duration-500"
@@ -294,22 +287,17 @@ function CalendarView() {
                         />
                       </div>
                       <p className={`text-[10px] font-semibold ${isSelected ? "text-primary-foreground" : ""}`}>
-                        {formatCurrency(stats.totalAmount)}
+                        {formatCurrency(stats!.totalAmount)}
                       </p>
                       <p className={`text-[9px] ${isSelected ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                        {stats.lineCount} lines
+                        {stats!.lineCount} lines · {stats!.poCount} POs
                       </p>
                     </div>
-                  ) : stats ? (
-                    <div className="mt-1">
-                      <div className="mx-auto rounded-full overflow-hidden h-0.5" style={{ width: "60%", backgroundColor: "hsl(var(--muted))" }}>
-                        <div
-                          className="h-full rounded-full"
-                          style={{ width: `${getBarWidth(lineCount)}%`, backgroundColor: "hsl(var(--primary) / 0.5)" }}
-                        />
-                      </div>
-                    </div>
-                  ) : null}
+                  ) : (
+                    <p className={`mt-1.5 text-[9px] ${isSelected ? "text-primary-foreground/50" : "text-muted-foreground/50"}`}>
+                      --
+                    </p>
+                  )}
                 </button>
               );
             })}

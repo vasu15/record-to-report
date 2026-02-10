@@ -27,6 +27,13 @@ Production-ready financial accruals management system with role-based access con
 - Business User 2: sanjay@company.com / User@123
 
 ## Recent Changes
+- 2026-02-10: Calendar, dashboard, and table enhancements
+  - Redesigned calendar as horizontal month scroller with always-visible stats (amount, lines, POs), gradient fade edges, hover-to-expand, smooth center-scroll
+  - Dashboard activity-based count now filters by processing month dates
+  - Activity-Based table expanded: GL Account, Start/End Date, Plant, Prev/Cur/Total GRN columns
+  - Derived/calculated columns across period-based and activity-based tables have tinted backgrounds (bg-muted for prev month, bg-accent for current month, bg-primary for final)
+  - Approval Tracker page for Finance users: submission tracking, nudge, approve/reject workflow
+  - Approval submissions table in schema for per-line tracking
 - 2026-02-10: Enhanced features across all modules
   - Tooltips on table headers (Period-Based, Activity-Based) explaining column meanings
   - Visual distinction: Calculator icon for calculated columns, Pencil icon for editable columns

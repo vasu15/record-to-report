@@ -338,6 +338,12 @@ export const storage = {
         netAmount: line.netAmount || 0,
         glAccount: line.glAccount || "",
         costCenter: line.costCenter || "",
+        profitCenter: line.profitCenter || "",
+        startDate: line.startDate || "",
+        endDate: line.endDate || "",
+        projectName: line.projectName || "",
+        plant: line.plant || "",
+        status: line.status || "Draft",
         assignmentId: assign?.id || null,
         assignedToUserId: assign?.assignedToUserId || null,
         assignedToName: assignedUser?.name || null,
@@ -646,12 +652,19 @@ export const storage = {
     const pm = parseProcessingMonth(monthStr);
 
     const allPeriodLines = await db.select().from(poLines).where(eq(poLines.category, "Period"));
-    const activityLines = await db.select().from(poLines).where(eq(poLines.category, "Activity"));
+    const allActivityLines = await db.select().from(poLines).where(eq(poLines.category, "Activity"));
     const nonpoSubs = await db.select().from(nonpoSubmissions);
     const allUsers = await db.select().from(users).where(eq(users.status, "Active"));
     const assigns = await db.select().from(activityAssignments);
 
     const periodLines = allPeriodLines.filter(line => {
+      const start = parseDateStr(line.startDate);
+      const end = parseDateStr(line.endDate);
+      if (!start || !end) return true;
+      return start <= pm.monthEnd && end >= pm.monthStart;
+    });
+
+    const activityLines = allActivityLines.filter(line => {
       const start = parseDateStr(line.startDate);
       const end = parseDateStr(line.endDate);
       if (!start || !end) return true;

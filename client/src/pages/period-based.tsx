@@ -373,7 +373,7 @@ export default function PeriodBasedPage() {
                       <TableHead className="min-w-[80px]">CC</TableHead>
                       <TableHead className="min-w-[70px]">Start</TableHead>
                       <TableHead className="min-w-[70px]">End</TableHead>
-                      <TableHead className="text-right min-w-[50px]">
+                      <TableHead className="text-right min-w-[50px] bg-muted/30">
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span className="inline-flex items-center gap-1 italic cursor-help">
@@ -461,7 +461,7 @@ export default function PeriodBasedPage() {
                           Remarks
                         </span>
                       </TableHead>
-                      <TableHead className="text-right font-bold min-w-[100px]">
+                      <TableHead className="text-right font-bold min-w-[100px] bg-primary/10">
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span className="inline-flex items-center gap-1 italic cursor-help">
@@ -505,7 +505,7 @@ export default function PeriodBasedPage() {
                         <TableCell className="text-xs font-mono">{line.costCenter}</TableCell>
                         <TableCell className="text-xs">{line.startDate}</TableCell>
                         <TableCell className="text-xs">{line.endDate}</TableCell>
-                        <TableCell className="text-right text-xs">{line.totalDays}</TableCell>
+                        <TableCell className="text-right text-xs bg-muted/10">{line.totalDays}</TableCell>
                         <TableCell className="text-right text-xs bg-muted/10 font-mono">{formatAmount(line.prevMonthProvision)}</TableCell>
                         <TableCell className="text-right text-xs bg-muted/10">
                           {editingCell?.id === line.id && editingCell?.field === "prevMonthTrueUp" ? (
@@ -564,7 +564,7 @@ export default function PeriodBasedPage() {
                             <MessageSquare className={`h-3.5 w-3.5 ${line.remarks ? "text-primary" : "text-muted-foreground"}`} />
                           </Button>
                         </TableCell>
-                        <TableCell className="text-right font-bold text-sm font-mono">
+                        <TableCell className="text-right font-bold text-sm font-mono bg-primary/5">
                           <span className={line.finalProvision < 0 ? "text-destructive" : ""}>
                             {formatAmount(line.finalProvision)}
                           </span>
