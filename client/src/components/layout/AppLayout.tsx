@@ -1,5 +1,6 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/contexts/PermissionsContext";
+import { useProcessingMonth } from "@/contexts/ProcessingMonthContext";
 import { useTheme } from "@/components/layout/ThemeProvider";
 import { useLocation, Link } from "wouter";
 import {
@@ -11,13 +12,17 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
+} from "@/components/ui/select";
+import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import {
   LayoutDashboard, Clock, Activity, FileText, Shield, Users, BarChart3,
-  Settings, Sun, Moon, Bell, LogOut, User, ClipboardList, FileInput, ChevronDown
+  Settings, Sun, Moon, Bell, LogOut, User, ClipboardList, FileInput, ChevronDown, Calendar
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
 import { apiGet } from "@/lib/api";
 import type { ReactNode } from "react";
 
@@ -131,6 +136,35 @@ function AppSidebar() {
   );
 }
 
+function ProcessingMonthSelector() {
+  const { processingMonth, setProcessingMonth, availableMonths } = useProcessingMonth();
+  const { isFinance } = useAuth();
+
+  const handleChange = (value: string) => {
+    setProcessingMonth(value);
+    queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/period-based"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/activity-based"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
+  };
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <Calendar className="h-4 w-4 text-muted-foreground hidden sm:block" />
+      <Select value={processingMonth} onValueChange={handleChange}>
+        <SelectTrigger className="w-[130px]" data-testid="select-processing-month">
+          <SelectValue placeholder="Select month" />
+        </SelectTrigger>
+        <SelectContent>
+          {availableMonths.map(m => (
+            <SelectItem key={m} value={m} data-testid={`option-month-${m.replace(" ", "-")}`}>{m}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 export function AppLayout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -148,6 +182,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <header className="flex items-center justify-between gap-2 px-4 py-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
             <div className="flex items-center gap-2">
               <SidebarTrigger data-testid="button-sidebar-toggle" />
+              <ProcessingMonthSelector />
             </div>
             <div className="flex items-center gap-1">
               <NotificationBell />

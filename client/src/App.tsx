@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { PermissionsProvider, usePermissions } from "@/contexts/PermissionsContext";
+import { ProcessingMonthProvider } from "@/contexts/ProcessingMonthContext";
 import { ThemeProvider } from "@/components/layout/ThemeProvider";
 import { AppLayout } from "@/components/layout/AppLayout";
 import LoginPage from "@/pages/login";
@@ -101,8 +102,10 @@ function App() {
         <TooltipProvider>
           <AuthProvider>
             <PermissionsProvider>
-              <Toaster />
-              <AppRoutes />
+              <ProcessingMonthProvider>
+                <Toaster />
+                <AppRoutes />
+              </ProcessingMonthProvider>
             </PermissionsProvider>
           </AuthProvider>
         </TooltipProvider>
