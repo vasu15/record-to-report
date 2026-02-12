@@ -517,7 +517,9 @@ Respond ONLY with valid JSON in this exact format, no markdown:
       };
 
       const processingMonth = req.query.processingMonth as string | undefined;
-      const lines = await storage.getPeriodBasedLines(processingMonth);
+      const periodLines = await storage.getPeriodBasedLines(processingMonth);
+      const activityLines = await storage.getActivityBasedLines(processingMonth);
+      const lines = [...periodLines, ...activityLines];
       const cols = selectedColumns || Object.keys(allColumnMap);
       const csvData = lines.map(l => {
         const row: Record<string, any> = {};
@@ -537,8 +539,10 @@ Respond ONLY with valid JSON in this exact format, no markdown:
   app.get("/api/reports/sap-post-ready", authMiddleware, async (req, res) => {
     try {
       const processingMonth = req.query.processingMonth as string | undefined;
-      const lines = await storage.getPeriodBasedLines(processingMonth);
-      const approved = lines.filter(l => l.status === "Approved");
+      const periodLines = await storage.getPeriodBasedLines(processingMonth);
+      const activityLines = await storage.getActivityBasedLines(processingMonth);
+      const allLines = [...periodLines, ...activityLines];
+      const approved = allLines.filter(l => l.status === "Approved" || l.status === "Posted");
       const summary = {
         totalLines: approved.length,
         totalProvision: approved.reduce((s, l) => s + l.finalProvision, 0),
@@ -587,8 +591,10 @@ Respond ONLY with valid JSON in this exact format, no markdown:
       };
 
       const processingMonth = req.query.processingMonth as string | undefined;
-      const lines = await storage.getPeriodBasedLines(processingMonth);
-      const approved = lines.filter(l => l.status === "Approved");
+      const periodLines = await storage.getPeriodBasedLines(processingMonth);
+      const activityLines = await storage.getActivityBasedLines(processingMonth);
+      const allLines = [...periodLines, ...activityLines];
+      const approved = allLines.filter((l: any) => l.status === "Approved" || l.status === "Posted");
       const cols = selectedColumns || Object.keys(allColumnMap);
       const csvData = approved.map(l => {
         const row: Record<string, any> = {};

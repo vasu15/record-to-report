@@ -354,6 +354,7 @@ export const storage = {
         prevMonthGrn: Math.round(prevMonthGrn),
         currentMonthGrn: Math.round(currentMonthGrn),
         totalGrnToDate: Math.round(totalGrnToDate),
+        finalProvision: Math.round(currentMonthGrn),
         prevMonthLabel: pm.prevMonthLabel,
         currentMonthLabel: pm.monthLabel,
       };
@@ -730,9 +731,12 @@ export const storage = {
   },
 
   async getAnalytics(processingMonth?: string) {
-    const allLines = await db.select().from(poLines);
+    const periodLines = await this.getPeriodBasedLines(processingMonth);
+    const activityLines = await this.getActivityBasedLines(processingMonth);
+    const allReportLines = [...periodLines, ...activityLines];
+
     const vendorMap = new Map<string, number>();
-    for (const l of allLines) {
+    for (const l of allReportLines) {
       const v = l.vendorName || "Unknown";
       vendorMap.set(v, (vendorMap.get(v) || 0) + (l.netAmount || 0));
     }
@@ -741,30 +745,99 @@ export const storage = {
       .sort((a, b) => b.amount - a.amount).slice(0, 10);
 
     const statusMap = new Map<string, number>();
-    for (const l of allLines) statusMap.set(l.status, (statusMap.get(l.status) || 0) + 1);
+    for (const l of allReportLines) statusMap.set(l.status, (statusMap.get(l.status) || 0) + 1);
     const statusDistribution = Array.from(statusMap.entries()).map(([name, value]) => ({ name, value }));
 
-    const totalAmount = allLines.reduce((s, l) => s + (l.netAmount || 0), 0);
+    const categoryMap = new Map<string, number>();
+    for (const l of allReportLines) {
+      const cat = l.category || "Other";
+      categoryMap.set(cat, (categoryMap.get(cat) || 0) + (l.netAmount || 0));
+    }
+    const categoryDistribution = Array.from(categoryMap.entries()).map(([name, value]) => ({ name, value }));
+
+    const totalAmount = allReportLines.reduce((s, l) => s + (l.netAmount || 0), 0);
+    const approvedCount = allReportLines.filter(l => l.status === "Approved" || l.status === "Posted").length;
+    const completionRate = allReportLines.length > 0 ? Math.round((approvedCount / allReportLines.length) * 100) : 0;
+
+    const assigns = await db.select().from(activityAssignments);
+    const responses = await db.select().from(businessResponses);
+    let totalResponseDays = 0;
+    let respondedCount = 0;
+    for (const a of assigns) {
+      if (a.assignedDate && (a.status === "Responded" || a.status === "Completed")) {
+        const response = responses.find(r => r.assignmentId === a.id);
+        if (response && response.responseDate) {
+          const assignedDt = parseDateStr(a.assignedDate);
+          const respondedDt = new Date(response.responseDate);
+          if (assignedDt && !isNaN(respondedDt.getTime())) {
+            const days = Math.max(1, Math.ceil((respondedDt.getTime() - assignedDt.getTime()) / 86400000));
+            totalResponseDays += days;
+            respondedCount++;
+          }
+        }
+      }
+    }
+    const avgResponseDays = respondedCount > 0 ? Math.round(totalResponseDays / respondedCount) : 0;
+
     return {
-      avgProvisionPerPo: allLines.length > 0 ? totalAmount / allLines.length : 0,
-      avgResponseDays: 3,
-      completionRate: 78,
-      totalPoLines: allLines.length,
+      avgProvisionPerPo: allReportLines.length > 0 ? totalAmount / allReportLines.length : 0,
+      avgResponseDays,
+      completionRate,
+      totalPoLines: allReportLines.length,
+      periodLines: periodLines.length,
+      activityLines: activityLines.length,
       topVendors,
       statusDistribution,
+      categoryDistribution,
     };
   },
 
   async getExceptions(processingMonth?: string) {
+    const periodLines = await this.getPeriodBasedLines(processingMonth);
+    const activityLines = await this.getActivityBasedLines(processingMonth);
+    const allLines = [...periodLines, ...activityLines];
+
+    let negativeProvisions = 0, negativeValue = 0;
+    let zeroProvisions = 0;
+    let largeTrueUps = 0, largeTrueUpValue = 0;
+    let grnExceeds = 0, grnExceedsValue = 0;
+    let missingFields = 0;
+
+    for (const l of periodLines) {
+      if (l.finalProvision < 0) { negativeProvisions++; negativeValue += Math.abs(l.finalProvision); }
+      if (l.finalProvision === 0 && l.netAmount > 0) { zeroProvisions++; }
+      const trueUpAbs = Math.abs(l.currentMonthTrueUp || 0) + Math.abs(l.prevMonthTrueUp || 0);
+      if (trueUpAbs > l.netAmount * 0.2 && trueUpAbs > 0) { largeTrueUps++; largeTrueUpValue += trueUpAbs; }
+      if (l.totalGrnToDate > l.netAmount && l.netAmount > 0) { grnExceeds++; grnExceedsValue += l.totalGrnToDate - l.netAmount; }
+      if (!l.glAccount || !l.costCenter) missingFields++;
+    }
+
+    let unassigned = 0, unassignedValue = 0;
+    for (const l of activityLines) {
+      if (!l.assignedToUserId) { unassigned++; unassignedValue += l.netAmount || 0; }
+      if (l.finalProvision < 0) { negativeProvisions++; negativeValue += Math.abs(l.finalProvision); }
+      if (l.finalProvision === 0 && l.netAmount > 0 && l.totalGrnToDate === 0) { zeroProvisions++; }
+      if (l.totalGrnToDate > l.netAmount && l.netAmount > 0) { grnExceeds++; grnExceedsValue += l.totalGrnToDate - l.netAmount; }
+      if (!l.glAccount || !l.costCenter) missingFields++;
+    }
+
+    const overdueLines = allLines.filter(l => l.status === "Submitted");
+    const overdueApprovals = overdueLines.length;
+    const overdueValue = overdueLines.reduce((s, l) => s + (l.netAmount || 0), 0);
+
+    const missingDatesLines = periodLines.filter(l => !l.startDate || !l.endDate);
+    const missingDates = missingDatesLines.length;
+    const missingDatesValue = missingDatesLines.reduce((s, l) => s + (l.netAmount || 0), 0);
+
     return {
-      negativeProvisions: 0, negativeValue: 0,
-      zeroProvisions: 0,
-      unassigned: 0, unassignedValue: 0,
-      overdueApprovals: 0, overdueValue: 0,
-      largeTrueUps: 0, largeTrueUpValue: 0,
-      grnExceeds: 0, grnExceedsValue: 0,
-      missingDates: 0, missingDatesValue: 0,
-      missingFields: 0,
+      negativeProvisions, negativeValue: Math.round(negativeValue),
+      zeroProvisions,
+      unassigned, unassignedValue: Math.round(unassignedValue),
+      overdueApprovals, overdueValue: Math.round(overdueValue),
+      largeTrueUps, largeTrueUpValue: Math.round(largeTrueUpValue),
+      grnExceeds, grnExceedsValue: Math.round(grnExceedsValue),
+      missingDates, missingDatesValue: Math.round(missingDatesValue),
+      missingFields,
     };
   },
 
