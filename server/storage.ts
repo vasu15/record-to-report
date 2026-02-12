@@ -296,14 +296,7 @@ export const storage = {
     const monthStr = processingMonth || config.processing_month || "Feb 2026";
     const pm = parseProcessingMonth(monthStr);
 
-    const allLines = await db.select().from(poLines).where(eq(poLines.category, "Activity")).orderBy(poLines.poNumber);
-
-    const lines = allLines.filter(line => {
-      const start = parseDateStr(line.startDate);
-      const end = parseDateStr(line.endDate);
-      if (!start || !end) return true;
-      return start <= pm.monthEnd && end >= pm.monthStart;
-    });
+    const lines = await db.select().from(poLines).where(eq(poLines.category, "Activity")).orderBy(poLines.poNumber);
 
     const lineIds = lines.map(l => l.id);
     if (lineIds.length === 0) return [];
@@ -672,12 +665,7 @@ export const storage = {
       return start <= pm.monthEnd && end >= pm.monthStart;
     });
 
-    const activityLines = allActivityLines.filter(line => {
-      const start = parseDateStr(line.startDate);
-      const end = parseDateStr(line.endDate);
-      if (!start || !end) return true;
-      return start <= pm.monthEnd && end >= pm.monthStart;
-    });
+    const activityLines = allActivityLines;
 
     const totalPeriodProvision = periodLines.reduce((s, l) => s + (l.netAmount || 0), 0);
     const pendingAssigns = assigns.filter(a => a.status === "Assigned").length;
@@ -843,6 +831,10 @@ export const storage = {
     const allLines = await db.select().from(poLines);
     const allGrns = await db.select().from(grnTransactions);
 
+    const periodLines = allLines.filter(l => l.category === "Period");
+    const activityLines = allLines.filter(l => l.category === "Activity");
+    const activityLineIds = new Set(activityLines.map(l => l.id));
+
     const monthStats: Record<string, { lineCount: number; totalAmount: number; poCount: number; grnTotal: number }> = {};
 
     for (let yearOffset = -1; yearOffset <= 1; yearOffset++) {
@@ -852,39 +844,43 @@ export const storage = {
         const monthEnd = new Date(baseYear, m + 1, 0);
         const key = `${MONTHS[m]} ${baseYear}`;
 
-        let lineCount = 0;
+        let periodCount = 0;
         let totalProvision = 0;
         const poSet = new Set<string>();
 
-        for (const line of allLines) {
+        for (const line of periodLines) {
           const start = parseDateStr(line.startDate);
           const end = parseDateStr(line.endDate);
           if (!start || !end) continue;
           if (start <= monthEnd && end >= monthStart) {
-            lineCount++;
+            periodCount++;
             if (line.poNumber) poSet.add(line.poNumber);
-
-            if (line.category === "Period") {
-              const totalDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1);
-              const dailyRate = (line.netAmount || 0) / totalDays;
-              const overlapDays = calcOverlapDays(start, end, monthStart, monthEnd);
-              totalProvision += dailyRate * overlapDays;
-            } else {
-              const totalDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1);
-              const dailyRate = (line.netAmount || 0) / totalDays;
-              const overlapDays = calcOverlapDays(start, end, monthStart, monthEnd);
-              totalProvision += dailyRate * overlapDays;
-            }
+            const totalDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1);
+            const dailyRate = (line.netAmount || 0) / totalDays;
+            const overlapDays = calcOverlapDays(start, end, monthStart, monthEnd);
+            totalProvision += dailyRate * overlapDays;
           }
         }
 
         let grnTotal = 0;
+        let activityGrnTotal = 0;
         for (const g of allGrns) {
           const gDate = parseDateStr(g.grnDate);
           if (gDate && gDate >= monthStart && gDate <= monthEnd) {
             grnTotal += g.grnValue || 0;
+            if (activityLineIds.has(g.poLineId)) {
+              activityGrnTotal += g.grnValue || 0;
+            }
           }
         }
+
+        const activityCount = activityLines.length;
+        for (const line of activityLines) {
+          if (line.poNumber) poSet.add(line.poNumber);
+        }
+
+        const lineCount = periodCount + activityCount;
+        totalProvision += activityGrnTotal;
 
         if (lineCount > 0 || grnTotal > 0) {
           monthStats[key] = { lineCount, totalAmount: Math.round(totalProvision), poCount: poSet.size, grnTotal: Math.round(grnTotal) };
