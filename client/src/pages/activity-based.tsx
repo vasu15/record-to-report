@@ -449,6 +449,12 @@ function AssignmentTab() {
 
           {editModalLine && (() => {
             const calcPreview = getModalCalcPreview();
+            const prevLabel = prevMonthLabel;
+            const curLabel = monthLabel;
+            const computeModalFinal = () => {
+              if (!calcPreview?.hasDates) return editModalLine.currentMonthGrn || 0;
+              return calcPreview.finalProvision ?? 0;
+            };
             return (
             <div className="space-y-5">
               <Card className="border-dashed">
@@ -461,9 +467,9 @@ function AssignmentTab() {
                     <div><span className="text-muted-foreground">Net Amount:</span> <span className="font-mono font-medium">{formatAmount(editModalLine.netAmount)}</span></div>
                     <div><span className="text-muted-foreground">GL Account:</span> <span className="font-mono">{editModalLine.glAccount}</span></div>
                     <div><span className="text-muted-foreground">Cost Center:</span> <span className="font-mono">{editModalLine.costCenter}</span></div>
-                    <div><span className="text-muted-foreground">Vendor:</span> {editModalLine.vendorName}</div>
+                    <div><span className="text-muted-foreground">Period:</span> {editModalLine.startDate || "Not set"} <ArrowRight className="inline h-3 w-3" /> {editModalLine.endDate || "Not set"}</div>
+                    <div><span className="text-muted-foreground">Total Days:</span> {calcPreview?.hasDates ? calcPreview.totalDays : "N/A"}</div>
                     <div><span className="text-muted-foreground">Status:</span> {statusBadge(editModalLine.assignmentStatus || "Not Assigned")}</div>
-                    <div><span className="text-muted-foreground">Assigned:</span> {editModalLine.assignedToName || "Unassigned"}</div>
                   </div>
                 </CardContent>
               </Card>
@@ -471,7 +477,7 @@ function AssignmentTab() {
               <div className="space-y-4">
                 <h4 className="text-sm font-semibold flex items-center gap-2">
                   <Pencil className="h-3.5 w-3.5" />
-                  Dates & Calculations
+                  Editable Fields
                 </h4>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -516,57 +522,38 @@ function AssignmentTab() {
                   When start and end dates are set, the system calculates provisions using pro-rated daily calculations (same as Period-Based). Without dates, provision equals current month GRN.
                 </p>
 
-                {calcPreview?.hasDates && (
-                  <>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="modal-prev-trueup" className="text-xs font-medium">{prevMonthLabel} True-Up</Label>
-                        <Input
-                          id="modal-prev-trueup"
-                          type="number"
-                          value={modalPrevTrueUp}
-                          onChange={e => setModalPrevTrueUp(e.target.value)}
-                          data-testid="input-modal-prev-trueup"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="modal-cur-trueup" className="text-xs font-medium">{monthLabel} True-Up</Label>
-                        <Input
-                          id="modal-cur-trueup"
-                          type="number"
-                          value={modalCurTrueUp}
-                          onChange={e => setModalCurTrueUp(e.target.value)}
-                          data-testid="input-modal-cur-trueup"
-                        />
-                      </div>
-                    </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="modal-prev-trueup" className="text-xs font-medium">{prevLabel} True-Up</Label>
+                    <Input
+                      id="modal-prev-trueup"
+                      type="number"
+                      value={modalPrevTrueUp}
+                      onChange={e => setModalPrevTrueUp(e.target.value)}
+                      data-testid="input-modal-prev-trueup"
+                    />
                     <p className="text-[11px] text-muted-foreground leading-tight">
-                      Manual adjustments to reconcile calculated provisions with actual expenses. Use for partial deliveries, price changes, or scope adjustments.
+                      Manual adjustment to {prevLabel}'s provision. Use this when the calculated provision didn't match the actual expense. A positive value increases the carry-forward; negative reduces it.
                     </p>
-                  </>
-                )}
+                  </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="modal-remarks" className="text-xs font-medium">Remarks</Label>
-                  <Textarea
-                    id="modal-remarks"
-                    value={modalRemarks}
-                    onChange={e => setModalRemarks(e.target.value)}
-                    placeholder="Add notes or justifications for adjustments..."
-                    rows={2}
-                    data-testid="input-modal-remarks"
-                  />
+                  <div className="space-y-1.5">
+                    <Label htmlFor="modal-cur-trueup" className="text-xs font-medium">{curLabel} True-Up</Label>
+                    <Input
+                      id="modal-cur-trueup"
+                      type="number"
+                      value={modalCurTrueUp}
+                      onChange={e => setModalCurTrueUp(e.target.value)}
+                      data-testid="input-modal-cur-trueup"
+                    />
+                    <p className="text-[11px] text-muted-foreground leading-tight">
+                      Manual adjustment to {curLabel}'s provision. Use when the system-suggested provision needs correction due to partial deliveries, price changes, or scope adjustments.
+                    </p>
+                  </div>
                 </div>
-              </div>
-
-              <div className="space-y-4">
-                <h4 className="text-sm font-semibold flex items-center gap-2">
-                  <ArrowRight className="h-3.5 w-3.5" />
-                  Assignment & Category
-                </h4>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Accrual Category</Label>
+                  <Label htmlFor="modal-category" className="text-xs font-medium">Accrual Category</Label>
                   <Select value={modalCategory} onValueChange={setModalCategory}>
                     <SelectTrigger data-testid="select-modal-activity-category">
                       <SelectValue />
@@ -581,6 +568,11 @@ function AssignmentTab() {
                       Start and end dates are required to switch to Period-Based. Please enter dates above.
                     </p>
                   )}
+                  <p className="text-[11px] text-muted-foreground leading-tight">
+                    <strong>Period-Based:</strong> Provision is calculated proportionally over the contract duration based on elapsed days.
+                    <strong> Activity-Based:</strong> Provision is determined by actual work completion reported by the assigned business user.
+                    Changing category moves this line to the other module.
+                  </p>
                 </div>
 
                 <div className="space-y-1.5">
@@ -595,6 +587,24 @@ function AssignmentTab() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <p className="text-[11px] text-muted-foreground leading-tight">
+                    Assign a business user to confirm activity completion. They will be notified and can respond with GRN values.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="modal-remarks" className="text-xs font-medium">Remarks</Label>
+                  <Textarea
+                    id="modal-remarks"
+                    value={modalRemarks}
+                    onChange={e => setModalRemarks(e.target.value)}
+                    placeholder="Add notes or justifications for adjustments..."
+                    rows={3}
+                    data-testid="input-modal-remarks"
+                  />
+                  <p className="text-[11px] text-muted-foreground leading-tight">
+                    Provide context for any adjustments made. Remarks are visible to approvers and auditors, and are included in exported reports.
+                  </p>
                 </div>
               </div>
 
@@ -607,6 +617,10 @@ function AssignmentTab() {
                   {calcPreview?.hasDates ? (
                     <div className="space-y-1 text-sm font-mono">
                       <div className="flex items-center justify-between gap-4">
+                        <span className="text-muted-foreground">Net Amount</span>
+                        <span>{formatAmount(editModalLine.netAmount)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
                         <span className="text-muted-foreground">Total Days</span>
                         <span>{calcPreview.totalDays}</span>
                       </div>
@@ -614,52 +628,48 @@ function AssignmentTab() {
                         <span className="text-muted-foreground">Daily Rate</span>
                         <span>{formatAmount(calcPreview.dailyRate)}</span>
                       </div>
-                      <hr className="border-dashed" />
-                      <div className="flex items-center justify-between gap-4">
-                        <span className="text-muted-foreground">{prevMonthLabel} Provision</span>
+                      <div className="flex items-center justify-between gap-4 border-t pt-1 mt-1">
+                        <span className="text-muted-foreground">{prevLabel} Provision</span>
                         <span>{formatAmount(calcPreview.prevProvision)}</span>
                       </div>
                       <div className="flex items-center justify-between gap-4">
-                        <span className="text-muted-foreground">+ {prevMonthLabel} True-Up</span>
-                        <span className={calcPreview.prevTU !== 0 ? "text-amber-600 dark:text-amber-400 font-medium" : ""}>{formatAmount(calcPreview.prevTU)}</span>
+                        <span className="text-muted-foreground">+ {prevLabel} True-Up</span>
+                        <span className={(parseFloat(modalPrevTrueUp) || 0) !== (editModalLine.prevMonthTrueUp || 0) ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}>{formatAmount(parseFloat(modalPrevTrueUp) || 0)}</span>
                       </div>
                       <div className="flex items-center justify-between gap-4">
-                        <span className="text-muted-foreground">- {prevMonthLabel} GRN</span>
+                        <span className="text-muted-foreground">- {prevLabel} GRN</span>
                         <span>{formatAmount(editModalLine.prevMonthGrn)}</span>
                       </div>
-                      <div className="flex items-center justify-between gap-4 font-medium">
-                        <span className="text-muted-foreground">= Carry Forward</span>
-                        <span className={calcPreview.carryForward < 0 ? "text-destructive" : ""}>{formatAmount(calcPreview.carryForward)}</span>
-                      </div>
-                      <hr className="border-dashed" />
-                      <div className="flex items-center justify-between gap-4">
-                        <span className="text-muted-foreground">{monthLabel} Suggested</span>
-                        <span>{formatAmount(calcPreview.sugProvision)}</span>
+                      <div className="flex items-center justify-between gap-4 border-t pt-1">
+                        <span className="text-muted-foreground font-medium">= Carry Forward</span>
+                        <span className="font-medium">{formatAmount(calcPreview.carryForward ?? 0)}</span>
                       </div>
                       <div className="flex items-center justify-between gap-4">
-                        <span className="text-muted-foreground">+ {monthLabel} True-Up</span>
-                        <span className={calcPreview.curTU !== 0 ? "text-amber-600 dark:text-amber-400 font-medium" : ""}>{formatAmount(calcPreview.curTU)}</span>
+                        <span className="text-muted-foreground">+ {curLabel} Provision</span>
+                        <span>{formatAmount(calcPreview?.sugProvision)}</span>
                       </div>
                       <div className="flex items-center justify-between gap-4">
-                        <span className="text-muted-foreground">- {monthLabel} GRN</span>
+                        <span className="text-muted-foreground">- {curLabel} GRN</span>
                         <span>{formatAmount(editModalLine.currentMonthGrn)}</span>
                       </div>
-                      <hr />
-                      <div className="flex items-center justify-between gap-4 font-bold text-base">
-                        <span>Final Provision</span>
-                        <span className={calcPreview.finalProvision < 0 ? "text-destructive" : ""}>{formatAmount(calcPreview.finalProvision)}</span>
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-muted-foreground">+ {curLabel} True-Up</span>
+                        <span className={(parseFloat(modalCurTrueUp) || 0) !== (editModalLine.currentMonthTrueUp || 0) ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}>{formatAmount(parseFloat(modalCurTrueUp) || 0)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 border-t pt-1 text-base">
+                        <span className="font-bold">= Final Provision</span>
+                        <span className={`font-bold ${computeModalFinal() < 0 ? "text-destructive" : ""}`}>{formatAmount(computeModalFinal())}</span>
                       </div>
                     </div>
                   ) : (
                     <div className="space-y-1 text-sm font-mono">
                       <div className="flex items-center justify-between gap-4">
-                        <span className="text-muted-foreground">{monthLabel} GRN (no dates)</span>
+                        <span className="text-muted-foreground">{curLabel} GRN (no dates)</span>
                         <span>{formatAmount(editModalLine.currentMonthGrn)}</span>
                       </div>
-                      <hr />
-                      <div className="flex items-center justify-between gap-4 font-bold text-base">
-                        <span>Final Provision</span>
-                        <span>{formatAmount(calcPreview?.finalProvision || 0)}</span>
+                      <div className="flex items-center justify-between gap-4 border-t pt-1 text-base">
+                        <span className="font-bold">= Final Provision</span>
+                        <span className="font-bold">{formatAmount(computeModalFinal())}</span>
                       </div>
                       <p className="text-[11px] text-muted-foreground leading-tight font-sans">
                         Set start and end dates above to enable pro-rated daily calculations with carry-forward and true-up support.
