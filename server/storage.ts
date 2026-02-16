@@ -304,11 +304,14 @@ export const storage = {
     const assigns = await db.select().from(activityAssignments).where(inArray(activityAssignments.poLineId, lineIds));
     const allUsers = await db.select().from(users);
     const grns = await db.select().from(grnTransactions).where(inArray(grnTransactions.poLineId, lineIds));
+    const calcs = await db.select().from(periodCalculations)
+      .where(and(inArray(periodCalculations.poLineId, lineIds), eq(periodCalculations.processingMonth, monthStr)));
 
     return lines.map(line => {
       const assign = assigns.find(a => a.poLineId === line.id);
       const assignedUser = assign ? allUsers.find(u => u.id === assign.assignedToUserId) : null;
       const lineGrns = grns.filter(g => g.poLineId === line.id);
+      const calc = calcs.find(c => c.poLineId === line.id);
 
       let prevMonthGrn = 0;
       let currentMonthGrn = 0;
@@ -329,6 +332,30 @@ export const storage = {
           }
         }
       }
+
+      const start = parseDateStr(line.startDate);
+      const end = parseDateStr(line.endDate);
+      const hasDates = !!(start && end);
+      const totalDays = hasDates ? Math.max(1, Math.ceil((end!.getTime() - start!.getTime()) / 86400000) + 1) : 0;
+      const dailyRate = totalDays > 0 ? (line.netAmount || 0) / totalDays : 0;
+
+      let currentMonthDays = 0;
+      let prevMonthDays = 0;
+      let prevMonthProvision = 0;
+      let suggestedProvision = 0;
+      if (hasDates) {
+        currentMonthDays = calcOverlapDays(start!, end!, pm.monthStart, pm.monthEnd);
+        prevMonthDays = calcOverlapDays(start!, end!, pm.prevMonthStart, pm.prevMonthEnd);
+        prevMonthProvision = Math.round(dailyRate * prevMonthDays);
+        suggestedProvision = Math.round(dailyRate * currentMonthDays);
+      }
+
+      const prevTrueUp = calc?.prevMonthTrueUp || 0;
+      const currTrueUp = calc?.currentMonthTrueUp || 0;
+      const carryForward = hasDates ? prevMonthProvision + prevTrueUp - prevMonthGrn : 0;
+      const finalProvision = hasDates
+        ? Math.round(carryForward + suggestedProvision - currentMonthGrn + currTrueUp)
+        : Math.round(currentMonthGrn);
 
       return {
         id: line.id,
@@ -351,10 +378,20 @@ export const storage = {
         assignmentStatus: assign?.status || "Not Assigned",
         assignedDate: assign?.assignedDate || null,
         category: line.category || "Activity",
+        hasDates,
+        totalDays,
+        prevMonthDays,
+        prevMonthProvision,
+        prevMonthTrueUp: prevTrueUp,
         prevMonthGrn: Math.round(prevMonthGrn),
+        carryForward: Math.round(carryForward),
+        currentMonthDays,
+        suggestedProvision,
         currentMonthGrn: Math.round(currentMonthGrn),
+        currentMonthTrueUp: currTrueUp,
+        remarks: calc?.remarks || "",
         totalGrnToDate: Math.round(totalGrnToDate),
-        finalProvision: Math.round(currentMonthGrn),
+        finalProvision,
         prevMonthLabel: pm.prevMonthLabel,
         currentMonthLabel: pm.monthLabel,
       };

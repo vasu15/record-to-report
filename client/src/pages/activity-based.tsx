@@ -54,6 +54,15 @@ function AssignmentTab() {
   const [editModalLine, setEditModalLine] = useState<any>(null);
   const [modalCategory, setModalCategory] = useState("");
   const [modalAssignUser, setModalAssignUser] = useState("");
+  const [modalPrevTrueUp, setModalPrevTrueUp] = useState("0");
+  const [modalCurTrueUp, setModalCurTrueUp] = useState("0");
+  const [modalRemarks, setModalRemarks] = useState("");
+  const [modalStartDate, setModalStartDate] = useState("");
+  const [modalEndDate, setModalEndDate] = useState("");
+  const [categoryDateDialogOpen, setCategoryDateDialogOpen] = useState(false);
+  const [pendingCategoryLine, setPendingCategoryLine] = useState<any>(null);
+  const [catStartDate, setCatStartDate] = useState("");
+  const [catEndDate, setCatEndDate] = useState("");
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -77,8 +86,8 @@ function AssignmentTab() {
   });
 
   const categoryMutation = useMutation({
-    mutationFn: ({ id, category }: { id: number; category: string }) =>
-      apiPut(`/api/po-lines/${id}/category`, { category }),
+    mutationFn: ({ id, category, startDate, endDate }: { id: number; category: string; startDate?: string; endDate?: string }) =>
+      apiPut(`/api/po-lines/${id}/category`, { category, startDate, endDate }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/activity-based", processingMonth] });
       queryClient.invalidateQueries({ queryKey: ["/api/period-based"] });
@@ -97,14 +106,109 @@ function AssignmentTab() {
     setEditModalLine(line);
     setModalCategory(line.category || "Activity");
     setModalAssignUser(line.assignedToUserId ? String(line.assignedToUserId) : "");
+    setModalPrevTrueUp(String(line.prevMonthTrueUp || 0));
+    setModalCurTrueUp(String(line.currentMonthTrueUp || 0));
+    setModalRemarks(line.remarks || "");
+    setModalStartDate(line.startDate || "");
+    setModalEndDate(line.endDate || "");
     setEditModalOpen(true);
+  };
+
+  const handleInlineCategorySwitch = (line: any, newCategory: string) => {
+    if (newCategory === "Period" && (!line.startDate || !line.endDate)) {
+      setPendingCategoryLine(line);
+      setCatStartDate(line.startDate || "");
+      setCatEndDate(line.endDate || "");
+      setCategoryDateDialogOpen(true);
+    } else {
+      categoryMutation.mutate({ id: line.id, category: newCategory, startDate: line.startDate, endDate: line.endDate } as any);
+    }
+  };
+
+  const confirmCategoryWithDates = async () => {
+    if (!pendingCategoryLine || !catStartDate || !catEndDate) return;
+    try {
+      await apiPut(`/api/po-lines/${pendingCategoryLine.id}/category`, {
+        category: "Period",
+        startDate: catStartDate,
+        endDate: catEndDate,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/activity-based", processingMonth] });
+      queryClient.invalidateQueries({ queryKey: ["/api/period-based"] });
+      setCategoryDateDialogOpen(false);
+      setPendingCategoryLine(null);
+      toast({ title: "Updated", description: "Moved to Period-Based with dates." });
+    } catch {
+      toast({ title: "Error", description: "Failed to switch category.", variant: "destructive" });
+    }
+  };
+
+  const getModalCalcPreview = () => {
+    if (!editModalLine) return null;
+    const start = modalStartDate ? new Date(modalStartDate) : null;
+    const end = modalEndDate ? new Date(modalEndDate) : null;
+    const hasDates = !!(start && end && !isNaN(start.getTime()) && !isNaN(end.getTime()));
+
+    if (!hasDates) {
+      return { hasDates: false, finalProvision: editModalLine.currentMonthGrn || 0 };
+    }
+
+    const totalDays = Math.max(1, Math.ceil((end!.getTime() - start!.getTime()) / 86400000) + 1);
+    const dailyRate = (editModalLine.netAmount || 0) / totalDays;
+    const prevProvision = editModalLine.prevMonthDays != null
+      ? Math.round(dailyRate * editModalLine.prevMonthDays)
+      : editModalLine.prevMonthProvision || 0;
+    const sugProvision = editModalLine.currentMonthDays != null
+      ? Math.round(dailyRate * editModalLine.currentMonthDays)
+      : editModalLine.suggestedProvision || 0;
+    const prevTU = parseFloat(modalPrevTrueUp) || 0;
+    const curTU = parseFloat(modalCurTrueUp) || 0;
+    const cf = prevProvision + prevTU - (editModalLine.prevMonthGrn || 0);
+    const fp = Math.round(cf + sugProvision - (editModalLine.currentMonthGrn || 0) + curTU);
+
+    return {
+      hasDates: true,
+      totalDays,
+      dailyRate: Math.round(dailyRate),
+      prevProvision,
+      sugProvision,
+      prevTU,
+      curTU,
+      carryForward: Math.round(cf),
+      finalProvision: fp,
+    };
   };
 
   const saveEditModal = async () => {
     if (!editModalLine) return;
     try {
+      if (modalStartDate !== (editModalLine.startDate || "") || modalEndDate !== (editModalLine.endDate || "")) {
+        await apiPut(`/api/po-lines/${editModalLine.id}/dates`, {
+          startDate: modalStartDate,
+          endDate: modalEndDate,
+        });
+      }
+      const prevTU = parseFloat(modalPrevTrueUp) || 0;
+      const curTU = parseFloat(modalCurTrueUp) || 0;
+      if (prevTU !== (editModalLine.prevMonthTrueUp || 0)) {
+        await apiPut(`/api/activity-based/${editModalLine.id}/true-up`, { field: "prevMonthTrueUp", value: prevTU });
+      }
+      if (curTU !== (editModalLine.currentMonthTrueUp || 0)) {
+        await apiPut(`/api/activity-based/${editModalLine.id}/true-up`, { field: "currentMonthTrueUp", value: curTU });
+      }
+      if (modalRemarks !== (editModalLine.remarks || "")) {
+        await apiPut(`/api/activity-based/${editModalLine.id}/remarks`, { remarks: modalRemarks });
+      }
       if (modalCategory !== (editModalLine.category || "Activity")) {
-        await apiPut(`/api/po-lines/${editModalLine.id}/category`, { category: modalCategory });
+        if (modalCategory === "Period" && (!modalStartDate || !modalEndDate)) {
+          toast({ title: "Dates required", description: "Start and end dates are required to switch to Period-Based.", variant: "destructive" });
+          return;
+        }
+        await apiPut(`/api/po-lines/${editModalLine.id}/category`, {
+          category: modalCategory,
+          startDate: modalStartDate || editModalLine.startDate,
+          endDate: modalEndDate || editModalLine.endDate,
+        });
       }
       if (modalAssignUser && modalAssignUser !== String(editModalLine.assignedToUserId || "")) {
         await apiPost("/api/activity-based/assign", { poLineId: editModalLine.id, assignedToUserId: parseInt(modalAssignUser) });
@@ -163,6 +267,8 @@ function AssignmentTab() {
                         </Tooltip>
                       </TableHead>
                       <TableHead className="min-w-[80px]">Plant</TableHead>
+                      <TableHead className="min-w-[90px]">Start Date</TableHead>
+                      <TableHead className="min-w-[90px]">End Date</TableHead>
                       <TableHead className="text-right min-w-[80px] bg-muted/30">
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -196,6 +302,17 @@ function AssignmentTab() {
                           <TooltipContent>Cumulative GRN value to date (derived)</TooltipContent>
                         </Tooltip>
                       </TableHead>
+                      <TableHead className="text-right min-w-[100px] bg-primary/10">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center gap-1 italic cursor-help font-semibold">
+                              <Calculator className="h-3 w-3" />
+                              Final Prov.
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>Final provision: includes carry-forward, true-ups, and GRN when dates are set</TooltipContent>
+                        </Tooltip>
+                      </TableHead>
                       <TableHead className="min-w-[120px]">
                         <Tooltip>
                           <TooltipTrigger asChild><span className="cursor-help">Assigned To</span></TooltipTrigger>
@@ -221,16 +338,19 @@ function AssignmentTab() {
                         <TableCell className="text-xs font-mono">{line.glAccount || "-"}</TableCell>
                         <TableCell className="text-xs font-mono">{line.costCenter}</TableCell>
                         <TableCell className="text-xs">{line.plant || "-"}</TableCell>
+                        <TableCell className="text-xs font-mono">{line.startDate || "-"}</TableCell>
+                        <TableCell className="text-xs font-mono">{line.endDate || "-"}</TableCell>
                         <TableCell className="text-right text-xs font-mono bg-muted/10">{formatAmount(line.prevMonthGrn)}</TableCell>
                         <TableCell className="text-right text-xs font-mono bg-accent/10">{formatAmount(line.currentMonthGrn)}</TableCell>
                         <TableCell className="text-right text-xs font-mono bg-accent/10">{formatAmount(line.totalGrnToDate)}</TableCell>
+                        <TableCell className={`text-right text-xs font-mono font-medium bg-primary/5 ${line.finalProvision < 0 ? "text-destructive" : ""}`}>{formatAmount(line.finalProvision)}</TableCell>
                         <TableCell className="text-xs">{line.assignedToName || "-"}</TableCell>
                         <TableCell>{statusBadge(line.assignmentStatus || "Not Assigned")}</TableCell>
                         <TableCell>
                           {can("activity_based", "canEdit") ? (
                             <Select
                               value={line.category || "Activity"}
-                              onValueChange={(val) => categoryMutation.mutate({ id: line.id, category: val })}
+                              onValueChange={(val) => handleInlineCategorySwitch(line, val)}
                             >
                               <SelectTrigger className="h-8 text-xs w-[100px]" data-testid={`select-category-${line.id}`}>
                                 <SelectValue />
@@ -316,7 +436,7 @@ function AssignmentTab() {
       </Dialog>
 
       <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto" data-testid="dialog-edit-row-activity">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-edit-row-activity">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Pencil className="h-4 w-4" />
@@ -327,7 +447,9 @@ function AssignmentTab() {
             </DialogDescription>
           </DialogHeader>
 
-          {editModalLine && (
+          {editModalLine && (() => {
+            const calcPreview = getModalCalcPreview();
+            return (
             <div className="space-y-5">
               <Card className="border-dashed">
                 <CardContent className="p-4 space-y-2">
@@ -335,12 +457,13 @@ function AssignmentTab() {
                     <Info className="h-3.5 w-3.5" />
                     Line Summary (read-only)
                   </div>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5 text-sm">
                     <div><span className="text-muted-foreground">Net Amount:</span> <span className="font-mono font-medium">{formatAmount(editModalLine.netAmount)}</span></div>
+                    <div><span className="text-muted-foreground">GL Account:</span> <span className="font-mono">{editModalLine.glAccount}</span></div>
                     <div><span className="text-muted-foreground">Cost Center:</span> <span className="font-mono">{editModalLine.costCenter}</span></div>
                     <div><span className="text-muted-foreground">Vendor:</span> {editModalLine.vendorName}</div>
-                    <div><span className="text-muted-foreground">Current Status:</span> {statusBadge(editModalLine.assignmentStatus || "Not Assigned")}</div>
-                    <div><span className="text-muted-foreground">Currently Assigned:</span> {editModalLine.assignedToName || "Unassigned"}</div>
+                    <div><span className="text-muted-foreground">Status:</span> {statusBadge(editModalLine.assignmentStatus || "Not Assigned")}</div>
+                    <div><span className="text-muted-foreground">Assigned:</span> {editModalLine.assignedToName || "Unassigned"}</div>
                   </div>
                 </CardContent>
               </Card>
@@ -348,11 +471,102 @@ function AssignmentTab() {
               <div className="space-y-4">
                 <h4 className="text-sm font-semibold flex items-center gap-2">
                   <Pencil className="h-3.5 w-3.5" />
-                  Editable Fields
+                  Dates & Calculations
+                </h4>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="modal-start-date" className="text-xs font-medium">Start Date</Label>
+                    <Input
+                      id="modal-start-date"
+                      type="date"
+                      value={modalStartDate ? modalStartDate.split("/").length === 3 ? `${modalStartDate.split("/")[2]}-${modalStartDate.split("/")[0].padStart(2, "0")}-${modalStartDate.split("/")[1].padStart(2, "0")}` : modalStartDate : ""}
+                      onChange={e => {
+                        const v = e.target.value;
+                        if (v) {
+                          const [y, m, d] = v.split("-");
+                          setModalStartDate(`${parseInt(m)}/${parseInt(d)}/${y}`);
+                        } else {
+                          setModalStartDate("");
+                        }
+                      }}
+                      data-testid="input-modal-start-date"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="modal-end-date" className="text-xs font-medium">End Date</Label>
+                    <Input
+                      id="modal-end-date"
+                      type="date"
+                      value={modalEndDate ? modalEndDate.split("/").length === 3 ? `${modalEndDate.split("/")[2]}-${modalEndDate.split("/")[0].padStart(2, "0")}-${modalEndDate.split("/")[1].padStart(2, "0")}` : modalEndDate : ""}
+                      onChange={e => {
+                        const v = e.target.value;
+                        if (v) {
+                          const [y, m, d] = v.split("-");
+                          setModalEndDate(`${parseInt(m)}/${parseInt(d)}/${y}`);
+                        } else {
+                          setModalEndDate("");
+                        }
+                      }}
+                      data-testid="input-modal-end-date"
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-tight">
+                  When start and end dates are set, the system calculates provisions using pro-rated daily calculations (same as Period-Based). Without dates, provision equals current month GRN.
+                </p>
+
+                {calcPreview?.hasDates && (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="modal-prev-trueup" className="text-xs font-medium">{prevMonthLabel} True-Up</Label>
+                        <Input
+                          id="modal-prev-trueup"
+                          type="number"
+                          value={modalPrevTrueUp}
+                          onChange={e => setModalPrevTrueUp(e.target.value)}
+                          data-testid="input-modal-prev-trueup"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="modal-cur-trueup" className="text-xs font-medium">{monthLabel} True-Up</Label>
+                        <Input
+                          id="modal-cur-trueup"
+                          type="number"
+                          value={modalCurTrueUp}
+                          onChange={e => setModalCurTrueUp(e.target.value)}
+                          data-testid="input-modal-cur-trueup"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-tight">
+                      Manual adjustments to reconcile calculated provisions with actual expenses. Use for partial deliveries, price changes, or scope adjustments.
+                    </p>
+                  </>
+                )}
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="modal-remarks" className="text-xs font-medium">Remarks</Label>
+                  <Textarea
+                    id="modal-remarks"
+                    value={modalRemarks}
+                    onChange={e => setModalRemarks(e.target.value)}
+                    placeholder="Add notes or justifications for adjustments..."
+                    rows={2}
+                    data-testid="input-modal-remarks"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h4 className="text-sm font-semibold flex items-center gap-2">
+                  <ArrowRight className="h-3.5 w-3.5" />
+                  Assignment & Category
                 </h4>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="modal-activity-category" className="text-xs font-medium">Accrual Category</Label>
+                  <Label className="text-xs font-medium">Accrual Category</Label>
                   <Select value={modalCategory} onValueChange={setModalCategory}>
                     <SelectTrigger data-testid="select-modal-activity-category">
                       <SelectValue />
@@ -362,15 +576,15 @@ function AssignmentTab() {
                       <SelectItem value="Activity">Activity-Based</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-[11px] text-muted-foreground leading-tight">
-                    <strong>Activity-Based:</strong> The provision amount is determined by the business user's reported work completion percentage, not by time elapsed.
-                    <strong> Period-Based:</strong> The provision is calculated automatically based on the number of days elapsed in the contract period.
-                    Switching to Period-Based will move this line to the Period-Based module for time-proportional calculations.
-                  </p>
+                  {modalCategory === "Period" && (!modalStartDate || !modalEndDate) && (
+                    <p className="text-[11px] text-destructive leading-tight font-medium">
+                      Start and end dates are required to switch to Period-Based. Please enter dates above.
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="modal-activity-assign" className="text-xs font-medium">Assign to Business User</Label>
+                  <Label className="text-xs font-medium">Assign to Business User</Label>
                   <Select value={modalAssignUser} onValueChange={setModalAssignUser}>
                     <SelectTrigger data-testid="select-modal-activity-assign">
                       <SelectValue placeholder="Select user..." />
@@ -381,33 +595,128 @@ function AssignmentTab() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-[11px] text-muted-foreground leading-tight">
-                    The assigned business user will receive this PO in their dashboard and must report the work completion percentage and estimated provision amount. Their response goes through approval before being posted.
-                  </p>
                 </div>
               </div>
 
               <Card className="border-dashed">
                 <CardContent className="p-4 space-y-2">
                   <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                    <Info className="h-3.5 w-3.5" />
-                    How Activity-Based Accruals Work
+                    <Calculator className="h-3.5 w-3.5" />
+                    Provision Calculation Preview
                   </div>
-                  <ol className="text-[11px] text-muted-foreground leading-relaxed space-y-1 list-decimal list-inside">
-                    <li>Finance assigns a PO line to a business user who manages the related activity.</li>
-                    <li>The business user reports the work completion status (e.g., 50%, 75%) and suggests a provision amount.</li>
-                    <li>Finance reviews the response and approves or requests revisions.</li>
-                    <li>Approved provisions are included in the final accrual posting to SAP.</li>
-                  </ol>
+                  {calcPreview?.hasDates ? (
+                    <div className="space-y-1 text-sm font-mono">
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-muted-foreground">Total Days</span>
+                        <span>{calcPreview.totalDays}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-muted-foreground">Daily Rate</span>
+                        <span>{formatAmount(calcPreview.dailyRate)}</span>
+                      </div>
+                      <hr className="border-dashed" />
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-muted-foreground">{prevMonthLabel} Provision</span>
+                        <span>{formatAmount(calcPreview.prevProvision)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-muted-foreground">+ {prevMonthLabel} True-Up</span>
+                        <span className={calcPreview.prevTU !== 0 ? "text-amber-600 dark:text-amber-400 font-medium" : ""}>{formatAmount(calcPreview.prevTU)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-muted-foreground">- {prevMonthLabel} GRN</span>
+                        <span>{formatAmount(editModalLine.prevMonthGrn)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 font-medium">
+                        <span className="text-muted-foreground">= Carry Forward</span>
+                        <span className={calcPreview.carryForward < 0 ? "text-destructive" : ""}>{formatAmount(calcPreview.carryForward)}</span>
+                      </div>
+                      <hr className="border-dashed" />
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-muted-foreground">{monthLabel} Suggested</span>
+                        <span>{formatAmount(calcPreview.sugProvision)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-muted-foreground">+ {monthLabel} True-Up</span>
+                        <span className={calcPreview.curTU !== 0 ? "text-amber-600 dark:text-amber-400 font-medium" : ""}>{formatAmount(calcPreview.curTU)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-muted-foreground">- {monthLabel} GRN</span>
+                        <span>{formatAmount(editModalLine.currentMonthGrn)}</span>
+                      </div>
+                      <hr />
+                      <div className="flex items-center justify-between gap-4 font-bold text-base">
+                        <span>Final Provision</span>
+                        <span className={calcPreview.finalProvision < 0 ? "text-destructive" : ""}>{formatAmount(calcPreview.finalProvision)}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-1 text-sm font-mono">
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-muted-foreground">{monthLabel} GRN (no dates)</span>
+                        <span>{formatAmount(editModalLine.currentMonthGrn)}</span>
+                      </div>
+                      <hr />
+                      <div className="flex items-center justify-between gap-4 font-bold text-base">
+                        <span>Final Provision</span>
+                        <span>{formatAmount(calcPreview?.finalProvision || 0)}</span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground leading-tight font-sans">
+                        Set start and end dates above to enable pro-rated daily calculations with carry-forward and true-up support.
+                      </p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
-          )}
+            );
+          })()}
 
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setEditModalOpen(false)} data-testid="button-cancel-edit-modal-activity">Cancel</Button>
             <Button onClick={saveEditModal} data-testid="button-save-edit-modal-activity">
               Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={categoryDateDialogOpen} onOpenChange={setCategoryDateDialogOpen}>
+        <DialogContent data-testid="dialog-category-dates">
+          <DialogHeader>
+            <DialogTitle>Enter Contract Dates</DialogTitle>
+            <DialogDescription>
+              Start and end dates are required to switch PO {pendingCategoryLine?.poNumber} to Period-Based accruals.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Start Date</Label>
+              <Input
+                type="date"
+                value={catStartDate}
+                onChange={e => setCatStartDate(e.target.value ? (() => { const [y,m,d] = e.target.value.split("-"); return `${parseInt(m)}/${parseInt(d)}/${y}`; })() : "")}
+                data-testid="input-cat-start-date"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">End Date</Label>
+              <Input
+                type="date"
+                value={catEndDate}
+                onChange={e => setCatEndDate(e.target.value ? (() => { const [y,m,d] = e.target.value.split("-"); return `${parseInt(m)}/${parseInt(d)}/${y}`; })() : "")}
+                data-testid="input-cat-end-date"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setCategoryDateDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={confirmCategoryWithDates}
+              disabled={!catStartDate || !catEndDate}
+              data-testid="button-confirm-cat-dates"
+            >
+              Switch to Period-Based
             </Button>
           </DialogFooter>
         </DialogContent>

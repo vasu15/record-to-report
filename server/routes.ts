@@ -260,16 +260,36 @@ export async function registerRoutes(
     }
   });
 
-  // Change PO line category
   app.put("/api/po-lines/:id/category", authMiddleware, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const { category } = req.body;
+      const { category, startDate, endDate } = req.body;
       if (!["Period", "Activity"].includes(category)) {
         return res.status(400).json({ message: "Category must be 'Period' or 'Activity'" });
       }
-      await db.update(poLines).set({ category }).where(eq(poLines.id, id));
-      await storage.logAudit(req.userId!, "Change Category", "po_line", String(id), { category });
+      if (category === "Period" && (!startDate || !endDate)) {
+        return res.status(400).json({ message: "Start date and end date are required when switching to Period-Based" });
+      }
+      const updateData: any = { category };
+      if (startDate) updateData.startDate = startDate;
+      if (endDate) updateData.endDate = endDate;
+      await db.update(poLines).set(updateData).where(eq(poLines.id, id));
+      await storage.logAudit(req.userId!, "Change Category", "po_line", String(id), { category, startDate, endDate });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/po-lines/:id/dates", authMiddleware, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { startDate, endDate } = req.body;
+      const updateData: any = {};
+      if (startDate !== undefined) updateData.startDate = startDate;
+      if (endDate !== undefined) updateData.endDate = endDate;
+      await db.update(poLines).set(updateData).where(eq(poLines.id, id));
+      await storage.logAudit(req.userId!, "Update Dates", "po_line", String(id), { startDate, endDate });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -328,6 +348,31 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       await storage.approveActivityResponse(id);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/activity-based/:id/true-up", authMiddleware, requireRole("Finance Admin"), async (req, res) => {
+    try {
+      const poLineId = parseInt(req.params.id);
+      const { field, value } = req.body;
+      if (!["prevMonthTrueUp", "currentMonthTrueUp"].includes(field)) {
+        return res.status(400).json({ message: "Invalid field" });
+      }
+      await storage.updatePeriodTrueUp(poLineId, field, parseFloat(value) || 0, req.userId!);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/activity-based/:id/remarks", authMiddleware, async (req, res) => {
+    try {
+      const poLineId = parseInt(req.params.id);
+      const { remarks } = req.body;
+      await storage.updateRemarks(poLineId, remarks || "", req.userId!);
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });

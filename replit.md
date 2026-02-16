@@ -27,6 +27,14 @@ Production-ready financial accruals management system with role-based access con
 - Business User 2: sanjay@company.com / User@123
 
 ## Recent Changes
+- 2026-02-16: Activity-Based edit modal, merged Approval Tracker, date-based calculations
+  - Activity-Based edit modal rebuilt: editable start/end dates, true-up fields, remarks, live calculation preview (mirrors Period-Based modal)
+  - When Activity lines have start/end dates, full pro-rated daily calculations (overlap days, carry-forward, true-ups) are used instead of GRN-only
+  - Activity-Based table: added Start Date, End Date, Final Provision columns
+  - Category switch validation: switching Activity→Period now requires start and end dates (backend enforced + frontend dialog)
+  - New endpoints: PUT /api/po-lines/:id/dates, PUT /api/activity-based/:id/true-up, PUT /api/activity-based/:id/remarks
+  - Approval Tracker merged into 3 tabs: Period-Based, Activity-Based, Non-PO with per-tab search/filter and pending count badges
+  - Summary cards show total items and pending review counts across all approval types
 - 2026-02-10: Calendar, dashboard, and table enhancements
   - Redesigned calendar as horizontal month scroller with always-visible stats (amount, lines, POs), gradient fade edges, hover-to-expand, smooth center-scroll
   - Dashboard activity-based count now filters by processing month dates
