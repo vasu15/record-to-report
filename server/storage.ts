@@ -947,8 +947,21 @@ export const storage = {
 
     const monthStats: Record<string, { lineCount: number; totalAmount: number; poCount: number; grnTotal: number }> = {};
 
-    for (let yearOffset = -1; yearOffset <= 1; yearOffset++) {
-      const baseYear = 2026 + yearOffset;
+    let minYear = 2026, maxYear = 2026;
+    for (const line of allLines) {
+      const s = parseDateStr(line.startDate);
+      const e = parseDateStr(line.endDate);
+      if (s) { minYear = Math.min(minYear, s.getFullYear()); maxYear = Math.max(maxYear, s.getFullYear()); }
+      if (e) { minYear = Math.min(minYear, e.getFullYear()); maxYear = Math.max(maxYear, e.getFullYear()); }
+    }
+    for (const g of allGrns) {
+      const gd = parseDateStr(g.grnDate);
+      if (gd) { minYear = Math.min(minYear, gd.getFullYear()); maxYear = Math.max(maxYear, gd.getFullYear()); }
+    }
+    minYear = Math.min(minYear, new Date().getFullYear());
+    maxYear = Math.max(maxYear, new Date().getFullYear());
+
+    for (let baseYear = minYear; baseYear <= maxYear; baseYear++) {
       for (let m = 0; m < 12; m++) {
         const monthStart = new Date(baseYear, m, 1);
         const monthEnd = new Date(baseYear, m + 1, 0);
@@ -999,6 +1012,24 @@ export const storage = {
     }
 
     return monthStats;
+  },
+
+  async getDataDateRange() {
+    const allLines = await db.select().from(poLines);
+    const allGrns = await db.select().from(grnTransactions);
+    let minYear = new Date().getFullYear();
+    let maxYear = new Date().getFullYear();
+    for (const line of allLines) {
+      const s = parseDateStr(line.startDate);
+      const e = parseDateStr(line.endDate);
+      if (s) { minYear = Math.min(minYear, s.getFullYear()); maxYear = Math.max(maxYear, s.getFullYear()); }
+      if (e) { minYear = Math.min(minYear, e.getFullYear()); maxYear = Math.max(maxYear, e.getFullYear()); }
+    }
+    for (const g of allGrns) {
+      const gd = parseDateStr(g.grnDate);
+      if (gd) { minYear = Math.min(minYear, gd.getFullYear()); maxYear = Math.max(maxYear, gd.getFullYear()); }
+    }
+    return { minYear, maxYear };
   },
 
   async getApprovers() {

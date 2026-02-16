@@ -801,6 +801,15 @@ Respond ONLY with valid JSON in this exact format, no markdown:
     }
   });
 
+  app.get("/api/data/date-range", authMiddleware, async (_req, res) => {
+    try {
+      const range = await storage.getDataDateRange();
+      res.json(range);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/data/clear-all", authMiddleware, requireRole("Finance Admin"), async (req, res) => {
     try {
       const { passkey } = req.body;

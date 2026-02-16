@@ -102,15 +102,23 @@ function CalendarView() {
     queryFn: () => apiGet<CalendarStatsData>("/api/dashboard/calendar-stats"),
   });
 
+  const { data: dateRange } = useQuery({
+    queryKey: ["/api/data/date-range"],
+    queryFn: () => apiGet<{ minYear: number; maxYear: number }>("/api/data/date-range"),
+  });
+
   const allMonths = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const minYear = Math.min(dateRange?.minYear ?? currentYear, currentYear) - 1;
+    const maxYear = Math.max(dateRange?.maxYear ?? currentYear, currentYear) + 1;
     const months: string[] = [];
-    for (let year = 2025; year <= 2027; year++) {
+    for (let year = minYear; year <= maxYear; year++) {
       for (let m = 0; m < 12; m++) {
         months.push(`${MONTH_NAMES[m]} ${year}`);
       }
     }
     return months;
-  }, []);
+  }, [dateRange]);
 
   const displayMonths = useMemo(() => {
     if (!hideEmpty || !calendarData) return allMonths;

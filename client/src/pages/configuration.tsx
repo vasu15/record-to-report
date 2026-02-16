@@ -24,6 +24,8 @@ import {
 } from "@/components/ui/dialog";
 import { Settings, Upload, Shield, Sliders, Save, Loader2, FileUp, Trash2, AlertTriangle } from "lucide-react";
 
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
 function ProcessingConfig() {
   const { isFinanceAdmin } = useAuth();
   const { can } = usePermissions();
@@ -33,6 +35,11 @@ function ProcessingConfig() {
   const { data: config, isLoading } = useQuery({
     queryKey: ["/api/config"],
     queryFn: () => apiGet<any>("/api/config"),
+  });
+
+  const { data: dateRange } = useQuery({
+    queryKey: ["/api/data/date-range"],
+    queryFn: () => apiGet<{ minYear: number; maxYear: number }>("/api/data/date-range"),
   });
 
   const [processingMonth, setProcessingMonth] = useState("");
@@ -79,10 +86,20 @@ function ProcessingConfig() {
             <Select value={processingMonth} onValueChange={setProcessingMonth} disabled={!can("config", "canEdit")}>
               <SelectTrigger data-testid="select-processing-month"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {["Jan 2026", "Feb 2026", "Mar 2026", "Apr 2026", "May 2026", "Jun 2026",
-                  "Jul 2026", "Aug 2026", "Sep 2026", "Oct 2026", "Nov 2026", "Dec 2026"].map(m => (
-                  <SelectItem key={m} value={m}>{m}</SelectItem>
-                ))}
+                {(() => {
+                  const currentYear = new Date().getFullYear();
+                  const minY = Math.min(dateRange?.minYear ?? currentYear, currentYear) - 1;
+                  const maxY = Math.max(dateRange?.maxYear ?? currentYear, currentYear) + 1;
+                  const months: string[] = [];
+                  for (let y = minY; y <= maxY; y++) {
+                    for (let m = 0; m < 12; m++) {
+                      months.push(`${MONTH_NAMES[m]} ${y}`);
+                    }
+                  }
+                  return months.map(m => (
+                    <SelectItem key={m} value={m}>{m}</SelectItem>
+                  ));
+                })()}
               </SelectContent>
             </Select>
           </div>
