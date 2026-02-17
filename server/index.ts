@@ -62,13 +62,24 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Health check endpoint - before anything else
+  app.get("/health", (_req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
   try {
     await seedDatabase();
   } catch (err) {
     console.error("[seed] Error seeding database:", err);
+    console.log("[seed] Continuing without seed data...");
   }
 
-  await registerRoutes(httpServer, app);
+  try {
+    await registerRoutes(httpServer, app);
+  } catch (err) {
+    console.error("[routes] Error registering routes:", err);
+    throw err;
+  }
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
