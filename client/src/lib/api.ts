@@ -1,3 +1,5 @@
+import { getApiUrl } from './config';
+
 export function getAuthHeaders(): HeadersInit {
   const token = sessionStorage.getItem("auth_token");
   return token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
@@ -5,7 +7,8 @@ export function getAuthHeaders(): HeadersInit {
 
 export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const headers = { ...getAuthHeaders(), ...(options.headers || {}) };
-  const res = await fetch(url, { ...options, headers });
+  const fullUrl = getApiUrl(url);
+  const res = await fetch(fullUrl, { ...options, headers });
   if (res.status === 401 && url.includes("/api/auth/")) {
     sessionStorage.removeItem("auth_token");
     window.location.href = "/";

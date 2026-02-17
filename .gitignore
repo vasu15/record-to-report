@@ -4,3 +4,17 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Local data
+.local/
+
+# Build artifacts
+*.log
+*.pid
+*.seed
+*.pid.lock

@@ -13,6 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
 } from "@/components/ui/dialog";
 import { FileText, Send, Loader2, Calendar, AlertCircle } from "lucide-react";
+import { ApproverSelectionDialog } from "@/components/approvals/ApproverSelectionDialog";
 
 export default function MyFormsPage() {
   const { toast } = useToast();
@@ -20,6 +21,8 @@ export default function MyFormsPage() {
   const [fillOpen, setFillOpen] = useState(false);
   const [selectedForm, setSelectedForm] = useState<any>(null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
+  const [approverDialogOpen, setApproverDialogOpen] = useState(false);
+  const [pendingSubmissionId, setPendingSubmissionId] = useState<number | null>(null);
 
   const { data: forms, isLoading } = useQuery({
     queryKey: ["/api/non-po/my-forms"],
@@ -28,13 +31,34 @@ export default function MyFormsPage() {
 
   const submitMutation = useMutation({
     mutationFn: (data: any) => apiPost("/api/non-po/submit", data),
-    onSuccess: () => {
+    onSuccess: (response: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/non-po/my-forms"] });
       setFillOpen(false);
-      toast({ title: "Submitted", description: "Form submitted successfully." });
+      // Open approver dialog with the created submission ID
+      setPendingSubmissionId(response.id || response.submissionId);
+      setApproverDialogOpen(true);
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
+
+  const submitForApproval = useMutation({
+    mutationFn: ({ submissionId, approverIds }: { submissionId: number; approverIds: number[] }) =>
+      apiPost("/api/non-po/submit-for-approval", { submissionId, approverIds }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/non-po/my-forms"] });
+      toast({ title: "Submitted for approval", description: "Your form has been sent for approval." });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const handleApproverSelection = async (selectedApproverIds: number[]) => {
+    if (!pendingSubmissionId) return;
+    
+    await submitForApproval.mutateAsync({
+      submissionId: pendingSubmissionId,
+      approverIds: selectedApproverIds,
+    });
+  };
 
   const openForm = (form: any) => {
     setSelectedForm(form);
@@ -153,6 +177,17 @@ export default function MyFormsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ApproverSelectionDialog
+        open={approverDialogOpen}
+        onOpenChange={setApproverDialogOpen}
+        poLineId={pendingSubmissionId}
+        type="nonpo"
+        title="Submit for Approval"
+        description="Select approvers for your Non-PO submission"
+        onSubmit={handleApproverSelection}
+        submitLabel="Submit for Approval"
+      />
     </div>
   );
 }

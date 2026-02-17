@@ -25,6 +25,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ApproverSelectionDialog } from "@/components/approvals/ApproverSelectionDialog";
 
 interface PeriodLine {
   id: number;
@@ -113,19 +114,12 @@ export default function PeriodBasedPage() {
   const [modalRemarks, setModalRemarks] = useState("");
   const [modalCategory, setModalCategory] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [approverModalOpen, setApproverModalOpen] = useState(false);
-  const [approverModalLineIds, setApproverModalLineIds] = useState<number[]>([]);
-  const [selectedApprovers, setSelectedApprovers] = useState<Set<number>>(new Set());
-  const [approverModalLabel, setApproverModalLabel] = useState("");
+  const [approverDialogOpen, setApproverDialogOpen] = useState(false);
+  const [approverDialogPoLineId, setApproverDialogPoLineId] = useState<number | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["/api/period-based", processingMonth],
     queryFn: () => apiGet<PeriodLine[]>(`/api/period-based?processingMonth=${encodeURIComponent(processingMonth)}`),
-  });
-
-  const { data: approvers = [] } = useQuery({
-    queryKey: ["/api/approvers"],
-    queryFn: () => apiGet<Approver[]>("/api/approvers"),
   });
 
   const updateTrueUp = useMutation({
@@ -152,9 +146,11 @@ export default function PeriodBasedPage() {
       apiPost("/api/period-based/submit", { poLineIds, approverIds, processingMonth }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/period-based", processingMonth] });
-      setApproverModalOpen(false);
       setSelectedIds(new Set());
-      toast({ title: "Submitted for approval" });
+      toast({ title: "Submitted for approval", description: "PO lines submitted successfully." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
 
@@ -222,29 +218,29 @@ export default function PeriodBasedPage() {
     setEditingCell(null);
   };
 
-  const openApproverModal = (lineIds: number[], label: string) => {
-    setApproverModalLineIds(lineIds);
-    setApproverModalLabel(label);
-    setSelectedApprovers(new Set(approvers.map(a => a.id)));
-    setApproverModalOpen(true);
-  };
-
-  const toggleApprover = (id: number) => {
-    setSelectedApprovers(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        if (next.size > 1) next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
+  const handleSubmitForApproval = async (selectedApproverIds: number[]) => {
+    if (!approverDialogPoLineId) return;
+    
+    await submitForApproval.mutateAsync({
+      poLineIds: [approverDialogPoLineId],
+      approverIds: selectedApproverIds,
     });
   };
 
-  const handleSendApproval = () => {
-    submitForApproval.mutate({
-      poLineIds: approverModalLineIds,
-      approverIds: Array.from(selectedApprovers),
+  const handleBulkSubmit = () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    
+    // For bulk submit, use the first selected line to get suggestions
+    setApproverDialogPoLineId(ids[0]);
+    setApproverDialogOpen(true);
+  };
+
+  const handleBulkSubmitConfirm = async (selectedApproverIds: number[]) => {
+    const ids = Array.from(selectedIds);
+    await submitForApproval.mutateAsync({
+      poLineIds: ids,
+      approverIds: selectedApproverIds,
     });
   };
 
@@ -323,11 +319,7 @@ export default function PeriodBasedPage() {
             <Button
               variant="default"
               size="sm"
-              onClick={() => {
-                const ids = Array.from(selectedIds);
-                const count = ids.length;
-                openApproverModal(ids, `${count} selected line${count > 1 ? "s" : ""}`);
-              }}
+              onClick={handleBulkSubmit}
               data-testid="button-send-selected"
             >
               <Send className="mr-1.5 h-3.5 w-3.5" />
@@ -617,7 +609,10 @@ export default function PeriodBasedPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => openApproverModal([line.id], `PO ${line.poNumber} / ${line.poLineItem}`)}
+                                onClick={() => {
+                                  setApproverDialogPoLineId(line.id);
+                                  setApproverDialogOpen(true);
+                                }}
                                 data-testid={`button-send-row-${line.id}`}
                               >
                                 <Send className="h-3.5 w-3.5" />
@@ -816,58 +811,22 @@ export default function PeriodBasedPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={approverModalOpen} onOpenChange={setApproverModalOpen}>
-        <DialogContent data-testid="dialog-approver-selection">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Send className="h-4 w-4" />
-              Send for Approval
-            </DialogTitle>
-            <DialogDescription>
-              {approverModalLabel}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <Label className="text-sm font-medium">Select Approvers</Label>
-            {approvers.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No approvers available.</p>
-            ) : (
-              <div className="space-y-2">
-                {approvers.map(approver => (
-                  <div
-                    key={approver.id}
-                    className="flex items-center gap-3 p-2 rounded-md border"
-                    data-testid={`approver-item-${approver.id}`}
-                  >
-                    <Checkbox
-                      checked={selectedApprovers.has(approver.id)}
-                      onCheckedChange={() => toggleApprover(approver.id)}
-                      data-testid={`checkbox-approver-${approver.id}`}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{approver.name}</p>
-                      <p className="text-xs text-muted-foreground truncate">{approver.email}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setApproverModalOpen(false)} data-testid="button-cancel-approver">
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSendApproval}
-              disabled={selectedApprovers.size === 0 || submitForApproval.isPending}
-              data-testid="button-confirm-send-approval"
-            >
-              <Send className="mr-1.5 h-3.5 w-3.5" />
-              Send
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ApproverSelectionDialog
+        open={approverDialogOpen}
+        onOpenChange={setApproverDialogOpen}
+        poLineId={approverDialogPoLineId}
+        type="period"
+        title="Submit for Approval"
+        description={
+          selectedIds.size > 1
+            ? `Select approvers for ${selectedIds.size} selected PO lines`
+            : approverDialogPoLineId
+            ? `Select approvers for this PO line`
+            : ""
+        }
+        onSubmit={selectedIds.size > 1 ? handleBulkSubmitConfirm : handleSubmitForApproval}
+        submitLabel="Submit for Approval"
+      />
     </div>
   );
 }

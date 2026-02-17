@@ -26,6 +26,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Search, UserPlus, CheckCircle, Clock, Send, Activity, Calculator, Pencil, Info, ArrowRight } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { DialogDescription } from "@/components/ui/dialog";
+import { ApproverSelectionDialog } from "@/components/approvals/ApproverSelectionDialog";
 
 function formatAmount(v: number | null | undefined) {
   if (v == null) return "-";
@@ -53,7 +54,6 @@ function AssignmentTab() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editModalLine, setEditModalLine] = useState<any>(null);
   const [modalCategory, setModalCategory] = useState("");
-  const [modalAssignUser, setModalAssignUser] = useState("");
   const [modalPrevTrueUp, setModalPrevTrueUp] = useState("0");
   const [modalCurTrueUp, setModalCurTrueUp] = useState("0");
   const [modalRemarks, setModalRemarks] = useState("");
@@ -63,6 +63,8 @@ function AssignmentTab() {
   const [pendingCategoryLine, setPendingCategoryLine] = useState<any>(null);
   const [catStartDate, setCatStartDate] = useState("");
   const [catEndDate, setCatEndDate] = useState("");
+  const [approverDialogOpen, setApproverDialogOpen] = useState(false);
+  const [approverDialogPoLineId, setApproverDialogPoLineId] = useState<number | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -77,13 +79,25 @@ function AssignmentTab() {
   });
 
   const assignMutation = useMutation({
-    mutationFn: (data: any) => apiPost("/api/activity-based/assign", data),
+    mutationFn: ({ poLineId, approverIds }: { poLineId: number; approverIds: number[] }) =>
+      apiPost("/api/activity-based/assign", { poLineId, assignedToUserId: approverIds[0] }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/activity-based", processingMonth] });
-      setAssignOpen(false);
       toast({ title: "Assigned", description: "PO assigned successfully." });
     },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
   });
+
+  const handleAssignWithApprovers = async (selectedApproverIds: number[]) => {
+    if (!approverDialogPoLineId) return;
+    
+    await assignMutation.mutateAsync({
+      poLineId: approverDialogPoLineId,
+      approverIds: selectedApproverIds,
+    });
+  };
 
   const categoryMutation = useMutation({
     mutationFn: ({ id, category, startDate, endDate }: { id: number; category: string; startDate?: string; endDate?: string }) =>
@@ -105,7 +119,6 @@ function AssignmentTab() {
   const openEditModal = (line: any) => {
     setEditModalLine(line);
     setModalCategory(line.category || "Activity");
-    setModalAssignUser(line.assignedToUserId ? String(line.assignedToUserId) : "");
     setModalPrevTrueUp(String(line.prevMonthTrueUp || 0));
     setModalCurTrueUp(String(line.currentMonthTrueUp || 0));
     setModalRemarks(line.remarks || "");
@@ -209,9 +222,6 @@ function AssignmentTab() {
           startDate: modalStartDate || editModalLine.startDate,
           endDate: modalEndDate || editModalLine.endDate,
         });
-      }
-      if (modalAssignUser && modalAssignUser !== String(editModalLine.assignedToUserId || "")) {
-        await apiPost("/api/activity-based/assign", { poLineId: editModalLine.id, assignedToUserId: parseInt(modalAssignUser) });
       }
       queryClient.invalidateQueries({ queryKey: ["/api/activity-based"] });
       queryClient.invalidateQueries({ queryKey: ["/api/period-based"] });
@@ -369,7 +379,10 @@ function AssignmentTab() {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => { setSelectedPo(line); setAssignOpen(true); }}
+                              onClick={() => {
+                                setApproverDialogPoLineId(line.id);
+                                setApproverDialogOpen(true);
+                              }}
                               data-testid={`button-assign-${line.id}`}
                             >
                               <UserPlus className="h-3.5 w-3.5 mr-1" />
@@ -400,40 +413,16 @@ function AssignmentTab() {
         </CardContent>
       </Card>
 
-      <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Assign PO {selectedPo?.poNumber}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="text-sm">
-              <p className="text-muted-foreground">Vendor: {selectedPo?.vendorName}</p>
-              <p className="text-muted-foreground">Amount: {formatAmount(selectedPo?.netAmount)}</p>
-            </div>
-            <Select value={selectedUser} onValueChange={setSelectedUser}>
-              <SelectTrigger data-testid="select-assign-user">
-                <SelectValue placeholder="Select user..." />
-              </SelectTrigger>
-              <SelectContent>
-                {businessUsers.map((u: any) => (
-                  <SelectItem key={u.id} value={String(u.id)}>{u.name} ({u.email})</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAssignOpen(false)}>Cancel</Button>
-            <Button
-              onClick={() => selectedPo && selectedUser && assignMutation.mutate({ poLineId: selectedPo.id, assignedToUserId: parseInt(selectedUser) })}
-              disabled={!selectedUser || assignMutation.isPending}
-              data-testid="button-confirm-assign"
-            >
-              <Send className="h-3.5 w-3.5 mr-1" />
-              Assign
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ApproverSelectionDialog
+        open={approverDialogOpen}
+        onOpenChange={setApproverDialogOpen}
+        poLineId={approverDialogPoLineId}
+        type="activity"
+        title="Assign for Review"
+        description="Select users who should work on this PO line. You can assign to business users or finance approvers."
+        onSubmit={handleAssignWithApprovers}
+        submitLabel="Assign"
+      />
 
       <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-edit-row-activity">
@@ -572,23 +561,6 @@ function AssignmentTab() {
                     <strong>Period-Based:</strong> Provision is calculated proportionally over the contract duration based on elapsed days.
                     <strong> Activity-Based:</strong> Provision is determined by actual work completion reported by the assigned business user.
                     Changing category moves this line to the other module.
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Assign to Business User</Label>
-                  <Select value={modalAssignUser} onValueChange={setModalAssignUser}>
-                    <SelectTrigger data-testid="select-modal-activity-assign">
-                      <SelectValue placeholder="Select user..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {businessUsers.map((u: any) => (
-                        <SelectItem key={u.id} value={String(u.id)}>{u.name} ({u.email})</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-[11px] text-muted-foreground leading-tight">
-                    Assign a business user to confirm activity completion. They will be notified and can respond with GRN values.
                   </p>
                 </div>
 

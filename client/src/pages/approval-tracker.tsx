@@ -90,14 +90,19 @@ function PeriodApprovals() {
     onError: (err: Error) => toast({ title: "Failed to reject", description: err.message, variant: "destructive" }),
   });
 
-  const filtered = items.filter((item: any) => {
-    if (statusFilter !== "all" && item.status.toLowerCase() !== statusFilter) return false;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      if (!item.poNumber?.toLowerCase().includes(q) && !item.vendorName?.toLowerCase().includes(q)) return false;
-    }
-    return true;
-  });
+  const filtered = items
+    .filter((item: any) => {
+      // Filter by category - Period-based approvals should have startDate and endDate, or category === "Period"
+      const isPeriodBased = (item.startDate && item.endDate) || item.category === "Period";
+      if (!isPeriodBased) return false;
+      
+      if (statusFilter !== "all" && item.status.toLowerCase() !== statusFilter) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        if (!item.poNumber?.toLowerCase().includes(q) && !item.vendorName?.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
 
   const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
@@ -411,10 +416,16 @@ function NonPoApprovals() {
 export default function ApprovalTrackerPage() {
   const [activeTab, setActiveTab] = useState("period");
 
-  const { data: periodItems = [] } = useQuery({
+  const { data: allPeriodItems = [] } = useQuery({
     queryKey: ["/api/approvals/tracker"],
     queryFn: () => apiGet<any[]>("/api/approvals/tracker"),
   });
+  
+  // Filter to only show Period-Based items (have startDate/endDate or category === "Period")
+  const periodItems = allPeriodItems.filter((i: any) => 
+    (i.startDate && i.endDate) || i.category === "Period"
+  );
+  
   const { data: activityItems = [] } = useQuery({
     queryKey: ["/api/activity-based/responses"],
     queryFn: () => apiGet<any[]>("/api/activity-based/responses"),

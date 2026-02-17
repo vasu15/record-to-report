@@ -3,10 +3,11 @@ import { usePermissions } from "@/contexts/PermissionsContext";
 import { useProcessingMonth } from "@/contexts/ProcessingMonthContext";
 import { useTheme } from "@/components/layout/ThemeProvider";
 import { useLocation, Link } from "wouter";
+import * as React from "react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger,
-  SidebarHeader, SidebarFooter
+  SidebarHeader, SidebarFooter, SidebarMenuSub, SidebarMenuSubItem, SidebarMenuSubButton
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   LayoutDashboard, Clock, Activity, FileText, Shield, Users, BarChart3,
-  Settings, Sun, Moon, Bell, LogOut, User, ClipboardList, FileInput, ChevronDown, Calendar, CheckSquare
+  Settings, Sun, Moon, Bell, LogOut, User, ClipboardList, FileInput, ChevronDown, Calendar, CheckSquare, Receipt
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
@@ -34,19 +35,27 @@ interface NavItem {
   alwaysShow?: boolean;
   businessUserOnly?: boolean;
   financeOnly?: boolean;
+  children?: NavItem[];
 }
 
 const navItems: NavItem[] = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, alwaysShow: true },
-  { title: "Period-Based Accruals", url: "/period-based", icon: Clock, feature: "period_based", financeOnly: true },
+  { 
+    title: "Accruals", 
+    url: "/accruals", 
+    icon: Receipt, 
+    alwaysShow: true,
+    children: [
+      { title: "Period-Based", url: "/period-based", icon: Clock, feature: "period_based", financeOnly: true },
+      { title: "Activity-Based", url: "/activity-based", icon: Activity, feature: "activity_based", financeOnly: true },
+      { title: "My Tasks", url: "/my-tasks", icon: ClipboardList, feature: "activity_based", businessUserOnly: true },
+      { title: "Non-PO", url: "/non-po", icon: FileText, feature: "non_po", financeOnly: true },
+      { title: "My Forms", url: "/my-forms", icon: FileInput, feature: "non_po", businessUserOnly: true },
+    ]
+  },
   { title: "Approval Tracker", url: "/approval-tracker", icon: CheckSquare, feature: "period_based", financeOnly: true },
-  { title: "Activity-Based Accruals", url: "/activity-based", icon: Activity, feature: "activity_based", financeOnly: true },
-  { title: "My Tasks", url: "/my-tasks", icon: ClipboardList, feature: "activity_based", businessUserOnly: true },
-  { title: "Non-PO Accruals", url: "/non-po", icon: FileText, feature: "non_po", financeOnly: true },
-  { title: "My Forms", url: "/my-forms", icon: FileInput, feature: "non_po", businessUserOnly: true },
-  { title: "Approval Rules", url: "/approval-rules", icon: Shield, feature: "config", financeOnly: true },
-  { title: "User Management", url: "/users", icon: Users, feature: "users", financeOnly: true },
   { title: "Reports", url: "/reports", icon: BarChart3, feature: "reports", financeOnly: true },
+  { title: "User Management", url: "/users", icon: Users, feature: "users", financeOnly: true },
   { title: "Configuration", url: "/configuration", icon: Settings, feature: "config", financeOnly: true },
 ];
 
@@ -76,14 +85,40 @@ function AppSidebar() {
   const { user, isBusinessUser, isFinance } = useAuth();
   const { canView } = usePermissions();
   const [location] = useLocation();
+  const [openMenus, setOpenMenus] = React.useState<Record<string, boolean>>({
+    "/accruals": true, // Accruals menu starts open by default
+  });
 
-  const filteredNav = navItems.filter(item => {
+  const filterNavItem = (item: NavItem): boolean => {
     if (item.alwaysShow) return true;
     if (item.businessUserOnly && !isBusinessUser) return false;
     if (item.financeOnly && !isFinance) return false;
     if (item.feature && !canView(item.feature)) return false;
     return true;
-  });
+  };
+
+  const filteredNav = navItems
+    .map(item => {
+      if (item.children) {
+        const filteredChildren = item.children.filter(filterNavItem);
+        return filteredChildren.length > 0 ? { ...item, children: filteredChildren } : null;
+      }
+      return filterNavItem(item) ? item : null;
+    })
+    .filter(Boolean) as NavItem[];
+
+  const toggleMenu = (url: string) => {
+    setOpenMenus(prev => ({ ...prev, [url]: !prev[url] }));
+  };
+
+  const isMenuActive = (item: NavItem): boolean => {
+    if (item.children) {
+      return item.children.some(child => 
+        location === child.url || (child.url !== "/dashboard" && location.startsWith(child.url))
+      );
+    }
+    return location === item.url || (item.url !== "/dashboard" && location.startsWith(item.url));
+  };
 
   return (
     <Sidebar>
@@ -104,7 +139,42 @@ function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {filteredNav.map((item) => {
-                const isActive = location === item.url || (item.url !== "/dashboard" && location.startsWith(item.url));
+                const isActive = isMenuActive(item);
+                const isOpen = openMenus[item.url];
+
+                if (item.children) {
+                  return (
+                    <SidebarMenuItem key={item.title}>
+                      <SidebarMenuButton
+                        onClick={() => toggleMenu(item.url)}
+                        isActive={isActive}
+                        data-testid={`nav-${item.url.slice(1)}`}
+                      >
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.title}</span>
+                        <ChevronDown className={`ml-auto h-4 w-4 transition-transform ${isOpen ? "" : "-rotate-90"}`} />
+                      </SidebarMenuButton>
+                      {isOpen && (
+                        <SidebarMenuSub>
+                          {item.children.map((child) => {
+                            const isChildActive = location === child.url || (child.url !== "/dashboard" && location.startsWith(child.url));
+                            return (
+                              <SidebarMenuSubItem key={child.title}>
+                                <SidebarMenuSubButton asChild isActive={isChildActive}>
+                                  <Link href={child.url} data-testid={`nav-${child.url.slice(1)}`}>
+                                    <child.icon className="h-4 w-4" />
+                                    <span>{child.title}</span>
+                                  </Link>
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            );
+                          })}
+                        </SidebarMenuSub>
+                      )}
+                    </SidebarMenuItem>
+                  );
+                }
+
                 return (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton asChild isActive={isActive}>

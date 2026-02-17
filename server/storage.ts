@@ -482,6 +482,11 @@ export const storage = {
       const resp = responses.find(r => r.assignmentId === a.id);
       const assignedUser = allUsers.find(u => u.id === a.assignedToUserId);
       if (!resp) return null;
+      
+      // Only include Activity-Based POs (category === "Activity" or missing dates)
+      const isActivityBased = line?.category === "Activity" || (!line?.startDate || !line?.endDate);
+      if (!isActivityBased) return null;
+      
       return {
         id: resp.id,
         assignmentId: a.id,
@@ -493,6 +498,9 @@ export const storage = {
         provisionAmount: resp.provisionAmount,
         comments: resp.comments,
         status: a.status,
+        remarks: resp.comments || "",
+        completionPercentage: resp.provisionPercent || 0,
+        category: line?.category || "Activity",
       };
     }).filter(Boolean);
   },
@@ -592,7 +600,195 @@ export const storage = {
   },
 
   async deleteRule(id: number) {
+    // Set ruleId to null in approval_submissions before deleting the rule
+    await db.update(approvalSubmissions)
+      .set({ ruleId: null })
+      .where(eq(approvalSubmissions.ruleId, id));
+    
     await db.delete(approvalRules).where(eq(approvalRules.id, id));
+  },
+
+  async evaluateRulesForPO(poLine: any) {
+    const activeRules = await db.select().from(approvalRules)
+      .where(eq(approvalRules.isActive, true))
+      .orderBy(approvalRules.priority);
+    
+    const matchedRules = [];
+    
+    for (const rule of activeRules) {
+      const conditions = rule.parsedConditions as any[];
+      const actions = rule.parsedActions as any[];
+      
+      if (!conditions || conditions.length === 0) continue;
+      
+      // Check if all conditions match
+      let allMatch = true;
+      for (const condition of conditions) {
+        const fieldValue = (poLine as any)[condition.field];
+        const conditionValue = condition.value;
+        
+        switch (condition.operator) {
+          case "equals":
+            if (String(fieldValue) !== String(conditionValue)) allMatch = false;
+            break;
+          case "notEquals":
+            if (String(fieldValue) === String(conditionValue)) allMatch = false;
+            break;
+          case "contains":
+            if (!String(fieldValue).toLowerCase().includes(String(conditionValue).toLowerCase())) allMatch = false;
+            break;
+          case "greaterThan":
+            if (!(Number(fieldValue) > Number(conditionValue))) allMatch = false;
+            break;
+          case "lessThan":
+            if (!(Number(fieldValue) < Number(conditionValue))) allMatch = false;
+            break;
+          case "startsWith":
+            if (!String(fieldValue).startsWith(String(conditionValue))) allMatch = false;
+            break;
+          default:
+            allMatch = false;
+        }
+        
+        if (!allMatch) break;
+      }
+      
+      if (allMatch) {
+        matchedRules.push({ rule, actions });
+      }
+    }
+    
+    return matchedRules;
+  },
+
+  async applyRulesToPO(poLineId: number, processingMonth: string) {
+    const [poLine] = await db.select().from(poLines).where(eq(poLines.id, poLineId)).limit(1);
+    if (!poLine) return { matched: false, actions: [] };
+    
+    const matchedRules = await this.evaluateRulesForPO(poLine);
+    if (matchedRules.length === 0) return { matched: false, actions: [] };
+    
+    // NOTE: This function NO LONGER auto-creates approval submissions
+    // It only evaluates and returns matched rules
+    // Approval submissions should be created manually when user submits
+    
+    const appliedActions = [];
+    for (const { rule, actions } of matchedRules) {
+      for (const action of actions) {
+        if (action.type === "requireApproval") {
+          // Resolve approvers
+          let approverIds: number[] = [];
+          
+          if (action.approverRole) {
+            const roleText = action.approverRole.toLowerCase();
+            
+            if (roleText.includes("all") && roleText.includes("finance")) {
+              const financeApprovers = await this.getAllFinanceApprovers();
+              const financeAdmins = await this.getAllFinanceAdmins();
+              approverIds = [...financeApprovers, ...financeAdmins].map(a => a.id);
+            } else if (roleText.includes("finance approver")) {
+              const approvers = await this.getAllFinanceApprovers();
+              approverIds = approvers.map(a => a.id);
+            } else if (roleText.includes("finance admin")) {
+              const admins = await this.getAllFinanceAdmins();
+              approverIds = admins.map(a => a.id);
+            }
+          }
+          
+          if (approverIds.length > 0) {
+            appliedActions.push({
+              type: "requireApproval",
+              approverIds,
+              ruleId: rule.id,
+              ruleName: rule.ruleName
+            });
+          }
+        }
+      }
+    }
+    
+    return { matched: true, actions: appliedActions, matchedRules: matchedRules.length };
+  },
+
+  async getApproverSuggestions(poLineId: number, type: string) {
+    // Get the PO line
+    const [poLine] = await db.select().from(poLines).where(eq(poLines.id, poLineId)).limit(1);
+    if (!poLine) {
+      return { 
+        ruleBasedApprovers: [], 
+        roleBasedApprovers: [], 
+        matchedRules: [], 
+        suggestedApproverIds: [] 
+      };
+    }
+    
+    // Evaluate rules for this PO
+    const matchedRules = await this.evaluateRulesForPO(poLine);
+    const ruleBasedApprovers: any[] = [];
+    const ruleBasedApproverIds = new Set<number>();
+    
+    for (const { rule, actions } of matchedRules) {
+      for (const action of actions) {
+        if (action.type === "requireApproval" && action.approverRole) {
+          const roleText = action.approverRole.toLowerCase();
+          let approvers: any[] = [];
+          
+          if (roleText.includes("all") && roleText.includes("finance")) {
+            const financeApprovers = await this.getAllFinanceApprovers();
+            const financeAdmins = await this.getAllFinanceAdmins();
+            approvers = [...financeApprovers, ...financeAdmins];
+          } else if (roleText.includes("finance approver")) {
+            approvers = await this.getAllFinanceApprovers();
+          } else if (roleText.includes("finance admin")) {
+            approvers = await this.getAllFinanceAdmins();
+          }
+          
+          approvers.forEach(a => {
+            if (!ruleBasedApproverIds.has(a.id)) {
+              ruleBasedApproverIds.add(a.id);
+              ruleBasedApprovers.push({ ...a, source: "rule", ruleName: rule.ruleName });
+            }
+          });
+        }
+      }
+    }
+    
+    // Get role-based approvers based on type
+    let roleBasedApprovers: any[] = [];
+    
+    if (type === "period") {
+      // Period-based: Finance Approvers only
+      roleBasedApprovers = await this.getAllFinanceApprovers();
+    } else if (type === "activity") {
+      // Activity-based: Business Users + Finance Approvers
+      const businessUsers = await this.getBusinessUsers();
+      const financeApprovers = await this.getAllFinanceApprovers();
+      roleBasedApprovers = [...businessUsers, ...financeApprovers];
+    } else if (type === "nonpo") {
+      // Non-PO: Business Users + Finance Approvers
+      const businessUsers = await this.getBusinessUsers();
+      const financeApprovers = await this.getAllFinanceApprovers();
+      roleBasedApprovers = [...businessUsers, ...financeApprovers];
+    }
+    
+    // Filter out duplicates (users already in rule-based)
+    roleBasedApprovers = roleBasedApprovers
+      .filter(a => !ruleBasedApproverIds.has(a.id))
+      .map(a => ({ ...a, source: "role" }));
+    
+    // Suggested approver IDs (rule-based first)
+    const suggestedApproverIds = Array.from(ruleBasedApproverIds);
+    
+    return {
+      ruleBasedApprovers,
+      roleBasedApprovers,
+      matchedRules: matchedRules.map(m => ({
+        id: m.rule.id,
+        name: m.rule.ruleName,
+        description: m.rule.naturalLanguageText
+      })),
+      suggestedApproverIds
+    };
   },
 
   async getConfigMap() {
@@ -804,9 +1000,9 @@ export const storage = {
       if (a.assignedDate && (a.status === "Responded" || a.status === "Completed")) {
         const response = responses.find(r => r.assignmentId === a.id);
         if (response && response.responseDate) {
-          const assignedDt = parseDateStr(a.assignedDate);
-          const respondedDt = new Date(response.responseDate);
-          if (assignedDt && !isNaN(respondedDt.getTime())) {
+          const assignedDt = a.assignedDate instanceof Date ? a.assignedDate : new Date(a.assignedDate);
+          const respondedDt = response.responseDate instanceof Date ? response.responseDate : new Date(response.responseDate);
+          if (assignedDt && !isNaN(assignedDt.getTime()) && !isNaN(respondedDt.getTime())) {
             const days = Math.max(1, Math.ceil((respondedDt.getTime() - assignedDt.getTime()) / 86400000));
             totalResponseDays += days;
             respondedCount++;
@@ -1041,7 +1237,44 @@ export const storage = {
     return approverUsers.map(u => ({ id: u.id, name: u.name, email: u.email }));
   },
 
-  async submitForApproval(poLineIds: number[], approverIds: number[], submittedBy: number, processingMonth: string) {
+  async getApproversByRole(role: string) {
+    const roleUsers = await db.select({
+      userId: userRoles.userId,
+      role: userRoles.role,
+    }).from(userRoles).where(eq(userRoles.role, role));
+    
+    if (roleUsers.length === 0) return [];
+    
+    const userIds = roleUsers.map(r => r.userId);
+    const userList = await db.select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      phone: users.phone,
+    }).from(users).where(inArray(users.id, userIds)).orderBy(users.name);
+    
+    return userList.map(u => ({ ...u, role }));
+  },
+
+  async getAllFinanceApprovers() {
+    return this.getApproversByRole("Finance Approver");
+  },
+
+  async getAllFinanceAdmins() {
+    return this.getApproversByRole("Finance Admin");
+  },
+  
+  async getBusinessUsers() {
+    const result = await db
+      .select({ user: users })
+      .from(users)
+      .innerJoin(userRoles, eq(userRoles.userId, users.id))
+      .where(eq(userRoles.role, "Business User"));
+    
+    return result.map(r => r.user);
+  },
+
+  async submitForApproval(poLineIds: number[], approverIds: number[], submittedBy: number, processingMonth: string, ruleId?: number) {
     const results = [];
     for (const poLineId of poLineIds) {
       const existing = await db.select().from(approvalSubmissions)
@@ -1059,6 +1292,7 @@ export const storage = {
         status: "Pending",
         processingMonth,
         nudgeCount: 0,
+        ruleId: ruleId || null,
       }).returning();
 
       await db.update(poLines).set({ status: "Submitted" }).where(eq(poLines.id, poLineId));
@@ -1091,6 +1325,9 @@ export const storage = {
         netAmount: line?.netAmount || 0,
         costCenter: line?.costCenter || "",
         glAccount: line?.glAccount || "",
+        category: line?.category || "Period", // Add category to identify Period vs Activity
+        startDate: line?.startDate || null,
+        endDate: line?.endDate || null,
         submittedByName: submitter?.name || "",
         submittedAt: s.submittedAt,
         status: s.status,

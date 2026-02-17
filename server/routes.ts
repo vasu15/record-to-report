@@ -102,7 +102,8 @@ export async function registerRoutes(
 
   app.put("/api/config/:key", authMiddleware, requireRole("Finance Admin"), async (req, res) => {
     try {
-      await storage.updateConfig(req.params.key, req.body.value, req.userId!);
+      const key = String(req.params.key);
+      await storage.updateConfig(key, req.body.value, req.userId!);
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -134,7 +135,7 @@ export async function registerRoutes(
 
   app.put("/api/users/:id", authMiddleware, requireRole("Finance Admin"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       const { name, phone, password, roles, costCenters, status } = req.body;
       const user = await storage.updateUser(id, { name, phone, password: password || undefined, roles, costCenters, status });
       await storage.logAudit(req.userId!, "Update User", "user", String(id));
@@ -157,7 +158,7 @@ export async function registerRoutes(
 
   app.put("/api/period-based/:id/true-up", authMiddleware, requireRole("Finance Admin"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       await storage.updatePeriodTrueUp(id, req.body.field, req.body.value, req.userId!);
       res.json({ success: true });
     } catch (err: any) {
@@ -167,7 +168,7 @@ export async function registerRoutes(
 
   app.put("/api/period-based/:id/remarks", authMiddleware, requireRole("Finance Admin", "Finance Approver"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       await storage.updatePeriodRemarks(id, req.body.remarks, req.userId!);
       res.json({ success: true });
     } catch (err: any) {
@@ -216,7 +217,7 @@ export async function registerRoutes(
   // Nudge approval
   app.post("/api/approvals/:id/nudge", authMiddleware, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       await storage.nudgeApproval(id);
       await storage.logAudit(req.userId!, "Nudge Approval", "approval", String(id));
       res.json({ success: true });
@@ -228,7 +229,7 @@ export async function registerRoutes(
   // Approve submission
   app.put("/api/approvals/:id/approve", authMiddleware, requireRole("Finance Approver", "Finance Admin"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       await storage.approveSubmission(id, req.userId!);
       await storage.logAudit(req.userId!, "Approve Submission", "approval", String(id));
       res.json({ success: true });
@@ -240,7 +241,7 @@ export async function registerRoutes(
   // Reject submission
   app.put("/api/approvals/:id/reject", authMiddleware, requireRole("Finance Approver", "Finance Admin"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       const { reason } = req.body;
       await storage.rejectSubmission(id, req.userId!, reason || "");
       await storage.logAudit(req.userId!, "Reject Submission", "approval", String(id));
@@ -262,7 +263,7 @@ export async function registerRoutes(
 
   app.put("/api/po-lines/:id/category", authMiddleware, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       const { category, startDate, endDate } = req.body;
       if (!["Period", "Activity"].includes(category)) {
         return res.status(400).json({ message: "Category must be 'Period' or 'Activity'" });
@@ -283,7 +284,7 @@ export async function registerRoutes(
 
   app.put("/api/po-lines/:id/dates", authMiddleware, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       const { startDate, endDate } = req.body;
       const updateData: any = {};
       if (startDate !== undefined) updateData.startDate = startDate;
@@ -346,7 +347,7 @@ export async function registerRoutes(
 
   app.put("/api/activity-based/:id/approve", authMiddleware, requireRole("Finance Admin", "Finance Approver"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       await storage.approveActivityResponse(id);
       res.json({ success: true });
     } catch (err: any) {
@@ -356,7 +357,7 @@ export async function registerRoutes(
 
   app.put("/api/activity-based/:id/true-up", authMiddleware, requireRole("Finance Admin"), async (req, res) => {
     try {
-      const poLineId = parseInt(req.params.id);
+      const poLineId = parseInt(String(req.params.id));
       const { field, value } = req.body;
       if (!["prevMonthTrueUp", "currentMonthTrueUp"].includes(field)) {
         return res.status(400).json({ message: "Invalid field" });
@@ -368,16 +369,17 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/activity-based/:id/remarks", authMiddleware, async (req, res) => {
-    try {
-      const poLineId = parseInt(req.params.id);
-      const { remarks } = req.body;
-      await storage.updateRemarks(poLineId, remarks || "", req.userId!);
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ message: err.message });
-    }
-  });
+  // Note: Activity-based remarks are handled through business responses
+  // app.put("/api/activity-based/:id/remarks", authMiddleware, async (req, res) => {
+  //   try {
+  //     const poLineId = parseInt(req.params.id);
+  //     const { remarks } = req.body;
+  //     await storage.updateRemarks(poLineId, remarks || "", req.userId!);
+  //     res.json({ success: true });
+  //   } catch (err: any) {
+  //     res.status(500).json({ message: err.message });
+  //   }
+  // });
 
   // Non-PO
   app.post("/api/non-po/forms", authMiddleware, requireRole("Finance Admin"), async (req, res) => {
@@ -418,7 +420,7 @@ export async function registerRoutes(
 
   app.put("/api/non-po/submissions/:id/review", authMiddleware, requireRole("Finance Admin", "Finance Approver"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       await storage.reviewNonPoSubmission(id, req.body.status, req.userId!);
       res.json({ success: true });
     } catch (err: any) {
@@ -446,7 +448,65 @@ export async function registerRoutes(
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ message: "Gemini API key not configured" });
+      console.warn("[rules/parse] Gemini API key not configured, using fallback regex parser");
+      // Fallback to regex parsing
+      try {
+        const conditions: any[] = [];
+        const actions: any[] = [];
+        const ccMatch = text.match(/cost\s*center\s*(\w+)/i);
+        if (ccMatch) conditions.push({ field: "costCenter", operator: "equals", value: ccMatch[1] });
+        const vendorMatch = text.match(/vendor\s+(.+?)(?:\s+should|\s+go|\s+must|$)/i);
+        if (vendorMatch) conditions.push({ field: "vendorName", operator: "contains", value: vendorMatch[1].trim() });
+        const amountMatch = text.match(/amount\s*(above|below|greater|less|over|under)\s*(\d[\d,]*)/i);
+        if (amountMatch) {
+          const op = ["above", "greater", "over"].includes(amountMatch[1].toLowerCase()) ? "greaterThan" : "lessThan";
+          conditions.push({ field: "netAmount", operator: op, value: parseFloat(amountMatch[2].replace(/,/g, "")) });
+        }
+        
+        // Check for approval requirements
+        const approvalMatch = text.match(/approval\s+from\s+(all\s+)?(?:the\s+)?(.+?)(?:\s+when|\s+for|$)/i);
+        if (approvalMatch) {
+          const isAll = !!approvalMatch[1];
+          const roleText = approvalMatch[2].toLowerCase();
+          
+          let approvers: any[] = [];
+          let approverRole = "";
+          
+          if (roleText.includes("finance") && (isAll || roleText.includes("all"))) {
+            const financeApprovers = await storage.getAllFinanceApprovers();
+            const financeAdmins = await storage.getAllFinanceAdmins();
+            approvers = [...financeApprovers, ...financeAdmins];
+            approverRole = "all finance approvers";
+          } else if (roleText.includes("finance approver")) {
+            approvers = await storage.getAllFinanceApprovers();
+            approverRole = "Finance Approver";
+          } else if (roleText.includes("finance admin")) {
+            approvers = await storage.getAllFinanceAdmins();
+            approverRole = "Finance Admin";
+          }
+          
+          actions.push({
+            type: "requireApproval",
+            approverRole,
+            resolvedApprovers: approvers,
+            approverCount: approvers.length
+          });
+        } else {
+          const userMatch = text.match(/(?:to|by)\s+([A-Z][a-z]+\s+[A-Z][a-z]+)/);
+          if (userMatch) actions.push({ type: "assignTo", userName: userMatch[1] });
+          else actions.push({ type: "autoAssign" });
+        }
+        
+        return res.json({ 
+          conditions, 
+          actions, 
+          interpretedText: text, 
+          fallback: true,
+          warning: "Using basic parsing. Add GEMINI_API_KEY for AI-powered interpretation." 
+        });
+      } catch (err: any) {
+        return res.status(500).json({ message: "Failed to parse rule: " + err.message });
+      }
     }
 
     try {
@@ -458,14 +518,19 @@ export async function registerRoutes(
 
 Available fields for conditions: costCenter, vendorName, netAmount, glAccount, plant, profitCenter, itemDescription, poNumber
 Available operators: equals, notEquals, contains, greaterThan, lessThan, between, startsWith
-Available action types: assignTo (with userName), autoAssign, requireApproval (with approverName), flagForReview, setStatus (with status)
+Available action types: 
+- assignTo (with userName - specific user name)
+- requireApproval (with approverRole - use "Finance Approver", "Finance Admin", or "all finance approvers")
+- autoAssign
+- flagForReview
+- setStatus (with status)
 
 Parse this rule: "${text}"
 
 Respond ONLY with valid JSON in this exact format, no markdown:
 {
   "conditions": [{"field": "string", "operator": "string", "value": "string or number"}],
-  "actions": [{"type": "string", "userName": "optional string"}],
+  "actions": [{"type": "string", "userName": "optional string", "approverRole": "optional string"}],
   "summary": "brief human-readable summary of the rule"
 }`;
 
@@ -474,9 +539,36 @@ Respond ONLY with valid JSON in this exact format, no markdown:
       const jsonStr = responseText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       const parsed = JSON.parse(jsonStr);
 
+      // Resolve approvers
+      const resolvedActions = [];
+      for (const action of (parsed.actions || [])) {
+        const resolvedAction = { ...action };
+        
+        if (action.type === "requireApproval" && action.approverRole) {
+          const roleText = action.approverRole.toLowerCase();
+          let approvers: any[] = [];
+          
+          if (roleText.includes("all") && roleText.includes("finance")) {
+            // Get both Finance Approvers and Finance Admins
+            const financeApprovers = await storage.getAllFinanceApprovers();
+            const financeAdmins = await storage.getAllFinanceAdmins();
+            approvers = [...financeApprovers, ...financeAdmins];
+          } else if (roleText.includes("finance approver")) {
+            approvers = await storage.getAllFinanceApprovers();
+          } else if (roleText.includes("finance admin")) {
+            approvers = await storage.getAllFinanceAdmins();
+          }
+          
+          resolvedAction.resolvedApprovers = approvers;
+          resolvedAction.approverCount = approvers.length;
+        }
+        
+        resolvedActions.push(resolvedAction);
+      }
+
       res.json({
         conditions: parsed.conditions || [],
-        actions: parsed.actions || [],
+        actions: resolvedActions,
         interpretedText: parsed.summary || text,
       });
     } catch (err: any) {
@@ -500,8 +592,41 @@ Respond ONLY with valid JSON in this exact format, no markdown:
 
   app.delete("/api/rules/:id", authMiddleware, requireRole("Finance Admin"), async (req, res) => {
     try {
-      await storage.deleteRule(parseInt(req.params.id));
+      await storage.deleteRule(parseInt(String(req.params.id)));
       res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/rules/apply/:poLineId", authMiddleware, async (req, res) => {
+    try {
+      const poLineId = parseInt(String(req.params.poLineId));
+      const config = await storage.getConfigMap();
+      const processingMonth = config.processing_month || "Feb 2026";
+      
+      const result = await storage.applyRulesToPO(poLineId, processingMonth);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/rules/apply-all", authMiddleware, requireRole("Finance Admin"), async (req, res) => {
+    return res.status(400).json({ message: "Auto-apply is disabled. Please submit POs manually for approval." });
+  });
+
+  // New endpoint: Get approver suggestions for a PO line
+  app.post("/api/rules/suggest-approvers", authMiddleware, async (req, res) => {
+    try {
+      const { poLineId, type } = req.body; // type: 'period', 'activity', 'nonpo'
+      
+      if (!poLineId) {
+        return res.status(400).json({ message: "poLineId is required" });
+      }
+      
+      const suggestions = await storage.getApproverSuggestions(poLineId, type || 'period');
+      res.json(suggestions);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -674,8 +799,11 @@ Respond ONLY with valid JSON in this exact format, no markdown:
       const csvText = req.file.buffer.toString("utf-8");
       let result = Papa.parse(csvText, { header: true, skipEmptyLines: true });
 
-      if (result.errors.length > 0 && result.errors[0].type === "Abort") {
-        return res.status(400).json({ message: `CSV parse errors: ${result.errors[0].message}` });
+      if (result.errors.length > 0) {
+        const hasAbortError = result.errors.some((e: any) => e.type === "Abort");
+        if (hasAbortError) {
+          return res.status(400).json({ message: `CSV parse errors: ${result.errors[0].message}` });
+        }
       }
 
       const config = await storage.getConfigMap();

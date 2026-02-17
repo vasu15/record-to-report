@@ -254,6 +254,7 @@ export const approvalSubmissions = pgTable("approval_submissions", {
   nudgeCount: integer("nudge_count").default(0),
   lastNudgeAt: timestamp("last_nudge_at"),
   processingMonth: text("processing_month"),
+  ruleId: integer("rule_id").references(() => approvalRules.id, { onDelete: "set null" }),
 }, (table) => [
   index("approval_sub_po_line_idx").on(table.poLineId),
   index("approval_sub_status_idx").on(table.status),
