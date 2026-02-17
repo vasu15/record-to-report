@@ -4,8 +4,8 @@ services:
     runtime: node
     plan: free
     region: oregon
-    buildCommand: npm install && npm run build:server
-    startCommand: npm start
+    buildCommand: npm install
+    startCommand: npx tsx server/index.ts
     envVars:
       - key: DATABASE_URL
         sync: false
